@@ -32,6 +32,8 @@ namespace riscv_tlm {
     class CPU : sc_core::sc_module  {
     public:
         virtual void set_clock(sc_core::sc_clock* c) { (void)c; }
+        // Identify pipelined cores
+        virtual bool isPipelined() const { return false; }
 
         /* Constructors */
         explicit CPU(sc_core::sc_module_name const &name, bool debug);
@@ -109,6 +111,7 @@ namespace riscv_tlm {
         bool dmi_ptr_valid;
         tlm::tlm_generic_payload trans;
         unsigned char *dmi_ptr = nullptr;
+        bool last_mem_access = false; // NEW: flag updated by concrete CPU_step
     };
 
     /**
@@ -134,6 +137,11 @@ namespace riscv_tlm {
 
         bool CPU_step() override;
         Registers<BaseType> *getRegisterBank() { return register_bank; }
+
+        /**
+         * @brief Identify pipelined cores
+         */
+        bool isPipelined() const override { return true; }
 
     private:
         Registers<BaseType> *register_bank;
@@ -188,6 +196,11 @@ namespace riscv_tlm {
 
         bool CPU_step() override;
         Registers<BaseType> *getRegisterBank() { return register_bank; }
+
+        /**
+         * @brief Identify pipelined cores
+         */
+        bool isPipelined() const override { return true; }
 
     private:
         Registers<BaseType> *register_bank;

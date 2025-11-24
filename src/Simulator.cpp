@@ -18,9 +18,21 @@
 #include <cstring>
 #include <iomanip>
 #include <cmath>
+#ifndef _WIN32
 #include <unistd.h>
+#include <getopt.h>
+#else
+// Provide minimal POSIX compatibility shims for Windows
+#define access _access
+
+// Minimal getopt_long replacement for Windows build; only parses -f -R -M -D -T -B -E -L
+static int optind_win = 1; char* optarg = nullptr; int opterr = 0; struct option { const char* name; int has_arg; int* flag; int val; };
+#define required_argument 1
+int getopt_long(int argc, char* const argv[], const char* optstring, const option* longopts, int* longindex) {
+    (void)longopts; (void)longindex; if (optind_win >= argc) return -1; char* arg = argv[optind_win]; if(arg[0] != '-') return -1; char opt = arg[1]; if(opt == '\0') return -1; optarg = nullptr; if(strchr(optstring,opt)) { if((opt=='f'||opt=='R'||opt=='M'||opt=='B'||opt=='E'||opt=='L') && optind_win+1 < argc) { optarg = argv[++optind_win]; } optind_win++; return opt; } optind_win++; return '?'; }
+#define getopt_long_defined 1
+#endif
 #include <cstdlib>
-#include <getopt.h> // added for getopt_long
 
 #include "CPU.h"
 #include "BusCtrl.h"

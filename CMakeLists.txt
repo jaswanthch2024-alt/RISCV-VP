@@ -17,7 +17,12 @@ if(NOT CMAKE_GENERATOR)
   endif()
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
+# Use C++20 on MSVC to support [[likely]] attribute; otherwise default to 17
+if(MSVC)
+  set(CMAKE_CXX_STANDARD 20)
+else()
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -28,15 +33,21 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ENABLE_STRICT "Treat warnings as errors" OFF)
 option(BUILD_DOC "Build documentation" ON)
-# Make tests opt-in (clean project)
 option(BUILD_TESTING "Build tests" OFF)
 option(ENABLE_PIPELINED_ISS "Enable pipelined ISS" ON)
 option(USE_LOCAL_SYSTEMC "Use vendored SystemC located in systemc/ subdir" ON)
 
-# Portable warning/optimization flags for GCC/Clang
-add_compile_options(-O3 -g -Wall -Wextra -Wunused-function -Wpedantic)
-if(ENABLE_STRICT)
-  add_compile_options(-Werror)
+# Compiler-specific warning/optimization flags (avoid passing GCC flags to MSVC)
+if(MSVC)
+  add_compile_options(/O2 /Zi /W3 /EHsc /permissive-)
+  if(ENABLE_STRICT)
+    add_compile_options(/WX)
+  endif()
+else()
+  add_compile_options(-O3 -g -Wall -Wextra -Wunused-function -Wpedantic)
+  if(ENABLE_STRICT)
+    add_compile_options(-Werror)
+  endif()
 endif()
 
 include_directories(./inc/)
@@ -93,6 +104,15 @@ else()
   target_link_libraries(riscv_tlm_core PUBLIC SystemC::systemc spdlog::spdlog_header_only)
 endif()
 
+# Target-specific warnings (avoid affecting third-party subdirs further)
+if(MSVC)
+  target_compile_options(riscv_tlm_core PRIVATE /W3 /wd4244 /wd4267 /wd4996)
+else()
+  target_compile_options(riscv_tlm_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+# Allow deprecated IEEE API usages (SC_HAS_PROCESS etc.)
+target_compile_definitions(riscv_tlm_core PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)
+
 # Ensure public headers are visible to dependents
 target_include_directories(riscv_tlm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc ${SystemC_INCLUDE_DIRS})
 
@@ -126,6 +146,4 @@ else()
       message(STATUS "Doxygen not found; documentation will not be generated")
     endif()
 endif()
-
-# Clean project: tests disabled by default and no CTest targets
 

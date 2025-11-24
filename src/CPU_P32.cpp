@@ -38,18 +38,15 @@ CPURV32P::~CPURV32P() {
 }
 
 bool CPURV32P::CPU_step() {
-    // Perform one pseudo-cycle: WB -> MEM -> EX -> ID -> IF -> latch
     bool breakpoint = false;
-
+    // One pipeline cycle: advance all stages then latch IF/ID.
     stageWB(breakpoint);
     stageMEM();
     stageEX();
     stageID();
     stageIF();
-
-    // Latch IF/ID
     if_id = if_id_next;
-
+    // Timing: handled in CPU::CPU_thread (single 10ns wait for pipelined cores).
     return breakpoint;
 }
 

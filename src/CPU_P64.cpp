@@ -39,15 +39,13 @@ CPURV64P::~CPURV64P() {
 
 bool CPURV64P::CPU_step() {
     bool breakpoint = false;
-
     stageWB(breakpoint);
     stageMEM();
     stageEX();
     stageID();
     stageIF();
-
     if_id = if_id_next;
-
+    // No per-step wait; timing provided by CPU_thread for pipelined cores.
     return breakpoint;
 }
 

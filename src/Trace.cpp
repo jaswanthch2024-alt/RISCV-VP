@@ -10,12 +10,24 @@
 #include <iostream>
 #include <cstring>
 
+#ifndef _WIN32
 #include <termios.h>
-#include <cstdlib>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
-#include <libgen.h> // Required for basename in Linux
+#include <libgen.h>
+#else
+#define NOMINMAX 1
+#include <windows.h>
+#include <iostream>
+// Provide minimal stubs so that Trace prints to stdout on Windows.
+#define SIGKILL 9
+using pid_t = int;
+static inline pid_t fork() { return -1; }
+static inline int grantpt(int) { return 0; }
+static inline int unlockpt(int) { return 0; }
+static inline char* ptsname(int) { return (char*)""; }
+#endif
 
 // Code partially taken from
 // https://github.com/embecosm/esp1-systemc-tlm/blob/master/sysc-models/simple-soc/TermSC.h
@@ -25,6 +37,7 @@
 namespace riscv_tlm::peripherals {
 
     void Trace::xtermLaunch(char *slaveName) const {
+#ifndef _WIN32
         char *arg;
         char *fin = &(slaveName[strlen(slaveName) - 2]);
 
@@ -59,10 +72,13 @@ namespace riscv_tlm::peripherals {
         perror("xterm execvp failed");
         delete[] arg;
         _exit(1); // Use _exit instead of exit in child process
+#else
+        (void)slaveName;
+#endif
     }
 
     void Trace::xtermKill() {
-
+#ifndef _WIN32
         if (-1 != ptSlave) {        // Close down the slave
             close(ptSlave);            // Close the FD
             ptSlave = -1;
@@ -77,9 +93,12 @@ namespace riscv_tlm::peripherals {
             kill(xtermPid, SIGKILL);
             waitpid(xtermPid, nullptr, 0);
         }
+#else
+#endif
     }
 
     void Trace::xtermSetup() {
+#ifndef _WIN32
         ptMaster = open("/dev/ptmx", O_RDWR);
 
         if (ptMaster != -1) {
@@ -103,7 +122,9 @@ namespace riscv_tlm::peripherals {
                 xtermLaunch(ptSlaveName);
             }
         }
+#else
     }
+#endif
 
     SC_HAS_PROCESS(Trace);
 
@@ -134,6 +155,7 @@ namespace riscv_tlm::peripherals {
         unsigned char *ptr = trans.get_data_ptr();
         delay = sc_core::SC_ZERO_TIME;
 
+#ifndef _WIN32
         if (ptSlave >= 0) {
             ssize_t a = write(ptSlave, ptr, 1);
             (void) a;
@@ -141,6 +163,11 @@ namespace riscv_tlm::peripherals {
             std::cout << static_cast<char>(*ptr);
             std::cout.flush();
         }
+#else
+        // Always stdout on Windows
+        std::cout << static_cast<char>(*ptr);
+        std::cout.flush();
+#endif
 
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
     }

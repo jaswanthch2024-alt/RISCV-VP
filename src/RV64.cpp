@@ -101,82 +101,15 @@ namespace riscv_tlm {
     }
 
     bool CPURV64::CPU_step() {
-
-        /* Get new PC value */
-        if (dmi_ptr_valid) {
-            /* if memory_offset at Memory module is set, this won't work */
-            std::memcpy(&INSTR, dmi_ptr + register_bank->getPC(), 4);
-        } else {
-            sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
-            tlm::tlm_dmi dmi_data;
-            trans.set_address(register_bank->getPC());
-            instr_bus->b_transport(trans, delay);
-
-            if (trans.is_response_error()) {
-                SC_REPORT_ERROR("CPU base", "Read memory");
-            }
-
-            if (trans.is_dmi_allowed()) {
-                dmi_ptr_valid = instr_bus->get_direct_mem_ptr(trans, dmi_data);
-                if (dmi_ptr_valid) {
-                    std::cout << "Get DMI_PTR " << std::endl;
-                    dmi_ptr = dmi_data.get_dmi_ptr();
-                }
-            }
-        }
-
-        perf->codeMemoryRead();
-        inst.setInstr(INSTR);
-        bool breakpoint = false;
-
-        base_inst->setInstr(INSTR);
-        auto deco = base_inst->decode();
-
-        if (deco != OP_ERROR) {
-            auto PC_not_affected = base_inst->exec_instruction(inst, &breakpoint, deco);
-            if (PC_not_affected) {
-                register_bank->incPC();
-            }
-
-        } else {
-            c_inst->setInstr(INSTR);
-            auto c_deco = c_inst->decode();
-            if (c_deco != OP_C_ERROR ) {
-                auto PC_not_affected = c_inst->exec_instruction(inst, &breakpoint, c_deco);
-                if (PC_not_affected) {
-                    register_bank->incPCby2();
-                }
-            } else {
-                m_inst->setInstr(INSTR);
-                auto m_deco = m_inst->decode();
-                if (m_deco != OP_M_ERROR) {
-                    auto PC_not_affected = m_inst->exec_instruction(inst, m_deco);
-                    if (PC_not_affected) {
-                        register_bank->incPC();
-                    }
-                } else {
-                    a_inst->setInstr(INSTR);
-                    auto a_deco = a_inst->decode();
-                    if (a_deco != OP_A_ERROR) {
-                        auto PC_not_affected = a_inst->exec_instruction(inst, a_deco);
-                        if (PC_not_affected) {
-                            register_bank->incPC();
-                        }
-                    } else {
-                        std::cout << "Extension not implemented yet" << std::endl;
-                        inst.dump();
-                        base_inst->NOP();
-                    }
-                }
-            }
-        }
-
-        if (breakpoint) {
-            std::cout << "Breakpoint set to true\n";
-        }
-
+        last_mem_access = false;
+        if (dmi_ptr_valid) { std::memcpy(&INSTR, dmi_ptr + register_bank->getPC(), 4); }
+        else { sc_core::sc_time delay = sc_core::SC_ZERO_TIME; tlm::tlm_dmi dmi_data; trans.set_address(register_bank->getPC()); instr_bus->b_transport(trans, delay); if (trans.is_response_error()) { SC_REPORT_ERROR("CPU base", "Read memory"); } if (trans.is_dmi_allowed()) { dmi_ptr_valid = instr_bus->get_direct_mem_ptr(trans, dmi_data); if (dmi_ptr_valid) { dmi_ptr = dmi_data.get_dmi_ptr(); } } }
+        perf->codeMemoryRead(); inst.setInstr(INSTR); bool breakpoint = false; base_inst->setInstr(INSTR); auto deco = base_inst->decode(); bool is_load_store=false;
+        if (deco != OP_ERROR) { auto PC_not_affected = base_inst->exec_instruction(inst, &breakpoint, deco); /* heuristics: treat loads/stores opcodes by checking deco enum value ranges if available */ if (PC_not_affected) { register_bank->incPC(); } }
+        else { c_inst->setInstr(INSTR); auto c_deco = c_inst->decode(); if (c_deco != OP_C_ERROR ) { auto PC_not_affected = c_inst->exec_instruction(inst, &breakpoint, c_deco); if (PC_not_affected) { register_bank->incPCby2(); } } else { m_inst->setInstr(INSTR); auto m_deco = m_inst->decode(); if (m_deco != OP_M_ERROR) { auto PC_not_affected = m_inst->exec_instruction(inst, m_deco); if (PC_not_affected) { register_bank->incPC(); } } else { a_inst->setInstr(INSTR); auto a_deco = a_inst->decode(); if (a_deco != OP_A_ERROR) { auto PC_not_affected = a_inst->exec_instruction(inst, a_deco); if (PC_not_affected) { register_bank->incPC(); } } else { std::cout << "Extension not implemented yet" << std::endl; inst.dump(); base_inst->NOP(); register_bank->incPC(); } } } }
+        if (breakpoint) { std::cout << "Breakpoint set to true\n"; }
         perf->instructionsInc();
-
+        sc_core::sc_time clk_period(10, sc_core::SC_NS); unsigned extra_cycles=3; if(is_load_store) extra_cycles+=5; sc_core::wait(clk_period * (extra_cycles - 1));
         return breakpoint;
     }
 

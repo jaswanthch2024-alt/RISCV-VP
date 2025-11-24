@@ -54,8 +54,6 @@ namespace riscv_tlm {
             /* Process IRQ (if any) */
             cpu_process_IRQ();
 
-            /* Fixed instruction time to 10 ns (i.e. 100 MHz) */
-//#define USE_QK
 #ifdef USE_QK
             // Model time used for additional processing
             m_qk->inc(default_time);
@@ -63,7 +61,10 @@ namespace riscv_tlm {
                 m_qk->sync();
             }
 #else
-            sc_core::wait(default_time);
+            // Only add base 1-cycle wait for pipelined cores; non-pipelined already wait internally
+            if (isPipelined()) {
+                sc_core::wait(default_time);
+            }
 #endif
         } // while(1)
     } // CPU_thread

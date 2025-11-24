@@ -37,6 +37,8 @@ public:
     std::uint64_t getStartDumpAddress() override;
     std::uint64_t getEndDumpAddress() override;
 
+    bool isPipelined() const override { return true; }
+
 private:
     struct IFID {
         BaseType pc{0};

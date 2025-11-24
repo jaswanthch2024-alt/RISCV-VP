@@ -39,6 +39,8 @@ public:
     std::uint64_t getStartDumpAddress() override;
     std::uint64_t getEndDumpAddress() override;
 
+    bool isPipelined() const override { return true; }
+
 private:
     // Minimal single-entry pipeline record (fetch + execute in next cycle)
     struct IFID {
