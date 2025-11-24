@@ -313,10 +313,8 @@ If you find this code useful, please consider citing:
         author = {Montón, Màrius},
         year = {2020}
 }
-```
+``
 
-## Publications
-I've published a paper describing the RISC-V simulator in [CARRV 2020](https://carrv.github.io/2020/) conference ([pdf](http://mariusmonton.com/wp-uploads/2020/05/CARRV2020_paper_7_Monton.pdf)).
 
 ##  License
 
