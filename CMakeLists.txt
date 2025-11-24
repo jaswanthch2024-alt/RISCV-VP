@@ -31,6 +31,7 @@ option(BUILD_DOC "Build documentation" ON)
 # Make tests opt-in (clean project)
 option(BUILD_TESTING "Build tests" OFF)
 option(ENABLE_PIPELINED_ISS "Enable pipelined ISS" ON)
+option(USE_LOCAL_SYSTEMC "Use vendored SystemC located in systemc/ subdir" ON)
 
 # Portable warning/optimization flags for GCC/Clang
 add_compile_options(-O3 -g -Wall -Wextra -Wunused-function -Wpedantic)
@@ -40,10 +41,30 @@ endif()
 
 include_directories(./inc/)
 
-find_package(SystemC REQUIRED)
-message(STATUS "SYSTEMC_FOUND: ${SYSTEMC_FOUND}")
-message(STATUS "SystemC include dirs: ${SYSTEMC_INCLUDE_DIRS}")
-message(STATUS "SystemC libraries: ${SYSTEMC_LIBRARIES}")
+# Try system installation first
+find_package(SystemC QUIET)
+
+if(NOT SystemC_FOUND AND USE_LOCAL_SYSTEMC)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/systemc/CMakeLists.txt")
+    message(STATUS "SystemC not found via find_package. Using local systemc/ subdirectory.")
+    add_subdirectory(systemc)
+    # The upstream build usually defines target 'systemc'. Provide an alias matching find_package usage.
+    if(TARGET systemc AND NOT TARGET SystemC::systemc)
+      add_library(SystemC::systemc ALIAS systemc)
+    endif()
+    set(SystemC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/systemc/src")
+  else()
+    message(FATAL_ERROR "SystemC not found. Clone it into systemc/ or install it so find_package(SystemC) works.")
+  endif()
+endif()
+
+if(TARGET SystemC::systemc)
+  message(STATUS "SystemC target available: SystemC::systemc")
+else()
+  message(FATAL_ERROR "Failed to obtain SystemC library target.")
+endif()
+
+message(STATUS "SystemC include dirs: ${SystemC_INCLUDE_DIRS}")
 
 # Prefer system spdlog, fall back to bundled
 find_package(spdlog CONFIG QUIET)
@@ -73,7 +94,7 @@ else()
 endif()
 
 # Ensure public headers are visible to dependents
-target_include_directories(riscv_tlm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
+target_include_directories(riscv_tlm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc ${SystemC_INCLUDE_DIRS})
 
 # If pipelined ISS is enabled, add its sources and export the macro
 if(ENABLE_PIPELINED_ISS)
