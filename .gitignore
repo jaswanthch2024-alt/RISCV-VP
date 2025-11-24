@@ -1,0 +1,86 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+*.elf
+*.hex
+
+# Logs / misc
+Log.txt
+helper.ods
+*.swp
+*.dump
+*.log
+
+# IDEs
+.idea/
+.vscode/
+.vs/
+
+# Project binaries & temp
+RISCV_TLM
+dump
+.project
+.cproject
+.settings
+
+# Docs output
+doc/Drawings.odg
+doc/html
+
+# CMake/Ninja/Generator outputs
+/build/
+/build-*/
+/build-vs/
+/out/
+/dist/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+*.ninja
+.ninja_deps
+.ninja_log
+
+# Visual Studio/MSBuild extras
+*.vcxproj*
+*.sln
+*.pdb
+*.ilk
+*.ipch
+*.tlog
+
+# Local package managers / vendors
+vcpkg/
+
+# Keep a tiny sample hex for tests (override global *.hex ignore)
+!tests/hex/hello_fixed.hex
