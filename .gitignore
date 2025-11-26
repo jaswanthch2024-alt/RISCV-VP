@@ -33,6 +33,10 @@
 *.elf
 *.hex
 
+# Allow robust test hex artifacts
+!tests/hex/robust_system_test.hex
+!tests/hex/robust_system_test64.hex
+
 # Logs / misc
 Log.txt
 helper.ods
@@ -81,6 +85,3 @@ compile_commands.json
 
 # Local package managers / vendors
 vcpkg/
-
-# Keep a tiny sample hex for tests (override global *.hex ignore)
-!tests/hex/hello_fixed.hex
