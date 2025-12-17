@@ -16,17 +16,21 @@
 #include "tlm.h"
 #include "tlm_utils/simple_initiator_socket.h"
 
-
 #include "CPU.h"
 #include "Memory.h"
 
 namespace riscv_tlm {
 
+    /**
+     * @brief GDB Debug connector
+     * 
+     * Note: Debug support for pipelined CPUs is limited.
+     * The debugger works best with register access and memory inspection.
+     */
     class Debug : sc_core::sc_module {
     public:
 
-        Debug(riscv_tlm::CPURV32 *cpu, Memory *mem);
-        Debug(riscv_tlm::CPURV64 *cpu, Memory *mem);
+        Debug(riscv_tlm::CPU *cpu, Memory *mem, cpu_types_t cpu_type);
 
         ~Debug() override;
 
@@ -42,8 +46,7 @@ namespace riscv_tlm {
         static constexpr size_t bufsize = 1024 * 8;
         char iobuf[bufsize]{};
         int conn;
-        riscv_tlm::CPURV32 *dbg_cpu32;
-        riscv_tlm::CPURV64 *dbg_cpu64;
+        riscv_tlm::CPU *dbg_cpu;
         Registers<std::uint32_t> *register_bank32;
         Registers<std::uint64_t> *register_bank64;
         Memory *dbg_mem;

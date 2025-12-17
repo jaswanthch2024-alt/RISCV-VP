@@ -1,6 +1,6 @@
-/*!
+/**
  \file CPU.h
- \brief Main CPU class
+ \brief Main CPU base class
  \author Màrius Montón
  \date August 2018
  */
@@ -28,10 +28,15 @@ namespace riscv_tlm {
 
     typedef enum {RV32, RV64} cpu_types_t;
 
-
+    /**
+     * @brief Abstract base class for RISC-V CPU models
+     * 
+     * All CPU implementations (pipelined or otherwise) derive from this class.
+     */
     class CPU : sc_core::sc_module  {
     public:
         virtual void set_clock(sc_core::sc_clock* c) { (void)c; }
+        
         // Identify pipelined cores
         virtual bool isPipelined() const { return false; }
 
@@ -49,21 +54,17 @@ namespace riscv_tlm {
 
         /**
          * @brief Perform one instruction step
-         * @return Breackpoint found (TBD, always true)
+         * @return Breakpoint found
          */
         virtual bool CPU_step() = 0;
 
         /**
          * @brief Instruction Memory bus socket
-         * @param trans transction to perfoem
-         * @param delay time to annotate
          */
         tlm_utils::simple_initiator_socket<CPU> instr_bus;
 
         /**
          * @brief IRQ line socket
-         * @param trans transction to perform (empty)
-         * @param delay time to annotate
          */
         tlm_utils::simple_target_socket<CPU> irq_line_socket;
 
@@ -87,10 +88,8 @@ namespace riscv_tlm {
 
         /**
          * @brief callback for IRQ simple socket
-         * @param trans transaction to perform (empty)
+         * @param trans transaction to perform
          * @param delay time to annotate
-         *
-         * it triggers an IRQ when called
          */
         virtual void call_interrupt(tlm::tlm_generic_payload &trans,
                             sc_core::sc_time &delay) = 0;
@@ -100,6 +99,7 @@ namespace riscv_tlm {
 
     public:
         MemoryInterface *mem_intf;
+        
     protected:
         Performance *perf;
         std::shared_ptr<spdlog::logger> logger;
@@ -111,126 +111,9 @@ namespace riscv_tlm {
         bool dmi_ptr_valid;
         tlm::tlm_generic_payload trans;
         unsigned char *dmi_ptr = nullptr;
-        bool last_mem_access = false; // NEW: flag updated by concrete CPU_step
+        bool last_mem_access = false;
     };
 
-    /**
-     * @brief RISC_V CPU 32 bits model
-     * @param name name of the module
-     */
-    class CPURV32 : public CPU {
-    public:
-        using BaseType = std::uint32_t;
+} // namespace riscv_tlm
 
-        /**
-         * @brief Constructor
-         * @param name Module name
-         * @param PC   Program Counter initialize value
-         * @param debug To start debugging
-         */
-        CPURV32(sc_core::sc_module_name const &name, BaseType PC, bool debug);
-
-        /**
-         * @brief Destructor
-         */
-        ~CPURV32() override;
-
-        bool CPU_step() override;
-        Registers<BaseType> *getRegisterBank() { return register_bank; }
-
-        /**
-         * @brief Identify pipelined cores
-         */
-        bool isPipelined() const override { return true; }
-
-    private:
-        Registers<BaseType> *register_bank;
-        C_extension<BaseType> *c_inst;
-        M_extension<BaseType> *m_inst;
-        A_extension<BaseType> *a_inst;
-        BASE_ISA<BaseType> *base_inst;
-        BaseType int_cause;
-        BaseType INSTR;
-
-        /**
-         *
-         * @brief Process and triggers IRQ if all conditions met
-         * @return true if IRQ is triggered, false otherwise
-         */
-        bool cpu_process_IRQ() override;
-
-        /**
-         * @brief callback for IRQ simple socket
-         * @param trans transaction to perform (empty)
-         * @param delay time to annotate
-         *
-         * it triggers an IRQ when called
-         */
-        void call_interrupt(tlm::tlm_generic_payload &trans,
-                            sc_core::sc_time &delay) override;
-
-        std::uint64_t getStartDumpAddress() override;
-        std::uint64_t getEndDumpAddress() override;
-    }; // RV32 class
-
-    /**
-     * @brief RISC_V CPU 64 bits model
-     * @param name name of the module
-     */
-    class CPURV64 : public CPU {
-    public:
-        using BaseType = std::uint64_t;
-
-        /**
-         * @brief Constructor
-         * @param name Module name
-         * @param PC   Program Counter initialize value
-         * @param debug To start debugging
-         */
-        CPURV64(sc_core::sc_module_name const &name, BaseType PC, bool debug);
-
-        /**
-         * @brief Destructor
-         */
-        ~CPURV64() override;
-
-        bool CPU_step() override;
-        Registers<BaseType> *getRegisterBank() { return register_bank; }
-
-        /**
-         * @brief Identify pipelined cores
-         */
-        bool isPipelined() const override { return true; }
-
-    private:
-        Registers<BaseType> *register_bank;
-        C_extension<BaseType> *c_inst;
-        M_extension<BaseType> *m_inst;
-        A_extension<BaseType> *a_inst;
-        BASE_ISA<BaseType> *base_inst;
-        BaseType int_cause;
-        BaseType INSTR;
-
-        /**
-         *
-         * @brief Process and triggers IRQ if all conditions met
-         * @return true if IRQ is triggered, false otherwise
-         */
-        bool cpu_process_IRQ() override;
-
-        /**
-         * @brief callback for IRQ simple socket
-         * @param trans transaction to perform (empty)
-         * @param delay time to annotate
-         *
-         * it triggers an IRQ when called
-         */
-        void call_interrupt(tlm::tlm_generic_payload &trans,
-                            sc_core::sc_time &delay) override;
-
-        std::uint64_t getStartDumpAddress() override;
-        std::uint64_t getEndDumpAddress() override;
-    }; // RV64 class
-
-}
-#endif
+#endif // CPU_BASE_H
