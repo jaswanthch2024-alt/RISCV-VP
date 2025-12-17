@@ -25,7 +25,7 @@
 // Provide minimal POSIX compatibility shims for Windows
 #define access _access
 
-// Minimal getopt_long replacement for Windows build; only parses -f -R -M -D -T -B -E -L
+// Minimal getopt_long replacement for Windows build
 static int optind_win = 1; char* optarg = nullptr; int opterr = 0; struct option { const char* name; int has_arg; int* flag; int val; };
 #define required_argument 1
 int getopt_long(int argc, char* const argv[], const char* optstring, const option* longopts, int* longindex) {
@@ -48,9 +48,8 @@ int getopt_long(int argc, char* const argv[], const char* optstring, const optio
 #include "DMA.h"
 #include "SyscallIf.h"
 
-#if defined(ENABLE_PIPELINED_ISS)
-#include "CPU_P32.h"
-#endif
+#include "CPU_P32_2.h"
+#include "CPU_P64_2.h"
 
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/basic_file_sink.h"
@@ -79,7 +78,6 @@ public:
     riscv_tlm::BusCtrl *Bus;
     riscv_tlm::peripherals::Trace *trace;
     riscv_tlm::peripherals::Timer *timer;
-    // New stub peripherals for binding completeness
     riscv_tlm::peripherals::UART *uart;
     riscv_tlm::peripherals::CLINT *clint;
     riscv_tlm::peripherals::PLIC *plic;
@@ -93,7 +91,7 @@ public:
     , Bus(nullptr)
     , trace(nullptr)
     , timer(nullptr)
-    , clk("clk", sc_core::sc_time(10, sc_core::SC_NS)) // ADD: init clock
+    , clk("clk", sc_core::sc_time(10, sc_core::SC_NS))
     {
         std::uint32_t start_PC;
 
@@ -102,16 +100,13 @@ public:
 
         cpu_type = cpu_type_m;
 
+        // Create 2-stage pipelined CPU based on architecture
         if (cpu_type == riscv_tlm::RV32) {
-        #if defined(ENABLE_PIPELINED_ISS)
-            cpu = new riscv_tlm::CPURV32P("cpu", start_PC, debug_session);
-        #else
-            cpu = new riscv_tlm::CPURV32("cpu", start_PC, debug_session);
-        #endif
+            cpu = new riscv_tlm::CPURV32P2("cpu", start_PC, debug_session);
         } else {
-            cpu = new riscv_tlm::CPURV64("cpu", start_PC, debug_session);
+            cpu = new riscv_tlm::CPURV64P2("cpu", start_PC, debug_session);
         }
-        cpu->set_clock(&clk); // ADD: right after new CPURV32/CPURV64
+        cpu->set_clock(&clk);
 
         Bus = new riscv_tlm::BusCtrl("BusCtrl");
         trace = new riscv_tlm::peripherals::Trace("Trace");
@@ -128,25 +123,17 @@ public:
         Bus->memory_socket.bind(MainMemory->socket);
         Bus->trace_socket.bind(trace->socket);
         Bus->timer_socket.bind(timer->socket);
-
-        // Bind new peripherals to bus
         Bus->uart_socket.bind(uart->socket);
         Bus->clint_socket.bind(clint->socket);
         Bus->plic_socket.bind(plic->socket);
         Bus->dma_socket.bind(dma->socket);
         Bus->syscall_socket.bind(sysif->socket);
 
-        // DMA master accesses system through the bus decoder
         dma->mem_master.bind(Bus->dma_master_socket);
-
         timer->irq_line.bind(cpu->irq_line_socket);
 
         if (debug_session) {
-            if (cpu_type == riscv_tlm::RV32) {
-                riscv_tlm::Debug Debug(dynamic_cast<riscv_tlm::CPURV32*>(cpu), MainMemory);
-            } else {
-                riscv_tlm::Debug Debug(dynamic_cast<riscv_tlm::CPURV64*>(cpu), MainMemory);
-            }
+            std::cout << "[Debug] GDB debugging not fully supported for pipelined CPUs." << std::endl;
         }
     }
 
@@ -189,12 +176,11 @@ private:
         trans.set_command(tlm::TLM_READ_COMMAND);
         trans.set_data_ptr(reinterpret_cast<unsigned char*>(data));
         trans.set_data_length(4);
-        trans.set_streaming_width(4); // = data_length to indicate no streaming
-        trans.set_byte_enable_ptr(nullptr); // 0 indicates unused
-        trans.set_dmi_allowed(false); // Mandatory initial value
+        trans.set_streaming_width(4);
+        trans.set_byte_enable_ptr(nullptr);
+        trans.set_dmi_allowed(false);
         trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
 
-        /* Filename in format name.elf.hex should be name.signature_output */
         std::string base_filename = filename.substr(filename.find_last_of("/\\") + 1);
         std::string base_name = base_filename.substr(0, base_filename.find('.'));
         std::string local_name = base_name + ".signature.output";
@@ -204,18 +190,17 @@ private:
         signature_file.open(local_name);
 
         for(unsigned int i = local_dump_addr_st; i < local_dump_addr_end; i = i+4) {
-            //trans.set_address(dump_addr + (i*4));
             trans.set_address(i);
             MainMemory->b_transport(trans, delay);
             signature_file << std::hex << std::setfill('0') << std::setw(8) << data[0] <<  "\n";
         }
 
         signature_file.close();
-       }
+    }
 
 private:
     riscv_tlm::cpu_types_t cpu_type;
-    sc_core::sc_clock clk; // ADD: clock lives as long as the top
+    sc_core::sc_clock clk;
 };
 
 Simulator *top;
@@ -224,14 +209,13 @@ std::shared_ptr<spdlog::logger> logger;
 static void intHandler(int dummy) {
     delete top;
     (void) dummy;
-    //sc_stop();
     exit(-1);
 }
 
-std::uint64_t max_instructions_limit = 0; // 0 means unlimited
+std::uint64_t max_instructions_limit = 0;
 
 static void process_arguments(int argc, char *argv[]) {
-    opterr = 0; // suppress default error messages for unrecognized options
+    opterr = 0;
     int c;
     long int debug_level = 0;
 
@@ -297,13 +281,12 @@ static void process_arguments(int argc, char *argv[]) {
                 cpu_type_opt = riscv_tlm::RV64;
             }
             break;
-        case 'M': // short or long --max-instr
+        case 'M':
             if (optarg) {
                 max_instructions_limit = std::strtoull(optarg, nullptr, 10);
             }
             break;
         case '?':
-            // Unknown option: ignore to avoid clutter during tests
             break;
         default:
             break;
@@ -311,24 +294,20 @@ static void process_arguments(int argc, char *argv[]) {
     }
 
     if (filename.empty()) {
-        std::cout << "Call ./RISCV_TLM -f <file.hex> [-R 32|64] [-L <0..3>] [-M <max_instr>] [-D]" << std::endl;
+        std::cout << "Usage: ./RISCV_TLM -f <file.hex> [-R 32|64] [-L <0..3>] [-M <max_instr>] [-D]" << std::endl;
         std::exit(EXIT_FAILURE);
     }
 }
 
-int sc_main(int argc, char *argv[]) { Performance *perf = Performance::getInstance();
+int sc_main(int argc, char *argv[]) {
+    Performance *perf = Performance::getInstance();
 
-    /* Capture Ctrl+C and finish the simulation */
     signal(SIGINT, intHandler);
-
-    /* SystemC time resolution set to 1 ns*/
     sc_core::sc_set_time_resolution(1, sc_core::SC_NS);
 
-    /* Parse and process program arguments. -f is mandatory */
     process_arguments(argc, argv);
 
     if (logger == nullptr) {
-        // Use a null sink by default for portability and to avoid filesystem deps
         auto null_sink = std::make_shared<spdlog::sinks::null_sink_mt>();
         logger = std::make_shared<spdlog::logger>("my_logger", null_sink);
         logger->set_pattern("%v");
@@ -336,11 +315,15 @@ int sc_main(int argc, char *argv[]) { Performance *perf = Performance::getInstan
         spdlog::register_logger(logger);
     }
 
+    std::cout << "RISC-V TLM Simulator starting (2-stage pipeline)" << std::endl;
+    std::cout << "  file: " << filename << std::endl;
+    std::cout << "  arch: " << (cpu_type_opt == riscv_tlm::RV32 ? "RV32" : "RV64") << std::endl;
+    std::cout << "  pipe: 2-stage (IF -> EX)" << std::endl;
+
     top = new Simulator("top", cpu_type_opt);
 
     auto start = std::chrono::steady_clock::now();
 
-    // If an instruction limit was set, run in small time slices to poll progress
     if (max_instructions_limit > 0) {
         const sc_core::sc_time quantum(1, sc_core::SC_MS);
         while (true) {
@@ -355,26 +338,45 @@ int sc_main(int argc, char *argv[]) { Performance *perf = Performance::getInstan
     auto end = std::chrono::steady_clock::now();
 
     std::chrono::duration<double> elapsed_seconds = end - start;
-    double instructions = static_cast<double>(perf->getInstructions()) / elapsed_seconds.count();
 
-    std::cout << "Total elapsed time: " << elapsed_seconds.count() << "s" << std::endl;
-    const sc_core::sc_time clk_period(10, sc_core::SC_NS);
-    sc_core::sc_time sim_time = sc_core::sc_time_stamp();
-    double cycles = sim_time / clk_period;
-    double ipc = cycles > 0.0 ? static_cast<double>(perf->getInstructions()) / cycles : 0.0;
-    std::cout << "Cycles: " << static_cast<unsigned long long>(cycles) << std::endl;
-    std::cout << "Instr/Cycle: " << std::fixed << std::setprecision(3) << ipc << std::endl;
+    std::cout << "\n=== Simulation Results ===" << std::endl;
+    std::cout << "Wall time:    " << std::fixed << std::setprecision(3) << elapsed_seconds.count() << " s" << std::endl;
+    std::cout << "Instructions: " << perf->getInstructions() << std::endl;
 
-    if (!mem_dump)
-    {
-        // Skip interactive wait when an instruction cap was specified (CI / tests)
-        if (max_instructions_limit == 0) {
-            std::cout << "Press Enter to finish" << std::endl;
-            std::cin.ignore();
+    // Print 2-stage pipeline statistics
+    if (top->cpu && top->cpu->isPipelined()) {
+        std::cout << "\n=== Pipeline Statistics (2-stage) ===" << std::endl;
+        
+        auto* cpu64p2 = dynamic_cast<riscv_tlm::CPURV64P2*>(top->cpu);
+        if (cpu64p2) {
+            auto stats = cpu64p2->getStats();
+            std::cout << "  Pipeline cycles:    " << stats.cycles << std::endl;
+            std::cout << "  Pipeline flushes:   " << stats.flushes << std::endl;
+            std::cout << "  Control hazards:    " << stats.control_hazards << std::endl;
+            if (stats.cycles > 0) {
+                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
+                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << std::endl;
+            }
+        }
+        
+        auto* cpu32p2 = dynamic_cast<riscv_tlm::CPURV32P2*>(top->cpu);
+        if (cpu32p2) {
+            auto stats = cpu32p2->getStats();
+            std::cout << "  Pipeline cycles:    " << stats.cycles << std::endl;
+            std::cout << "  Pipeline flushes:   " << stats.flushes << std::endl;
+            std::cout << "  Control hazards:    " << stats.control_hazards << std::endl;
+            if (stats.cycles > 0) {
+                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
+                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << std::endl;
+            }
         }
     }
 
-    // call all destructors, clean exit.
+    if (!mem_dump && max_instructions_limit == 0) {
+        std::cout << "Press Enter to finish" << std::endl;
+        std::cin.ignore();
+    }
+
     delete top;
 
     return 0;

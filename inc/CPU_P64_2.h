@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
-#ifndef CPU_P64_H
-#define CPU_P64_H
+#ifndef CPU_P64_2_H
+#define CPU_P64_2_H
 
 #define SC_INCLUDE_DYNAMIC_PROCESSES
 #include "systemc"
@@ -20,12 +20,25 @@
 
 namespace riscv_tlm {
 
-class CPURV64P : public CPU {
+/**
+ * @brief 2-Stage Pipelined RISC-V 64-bit CPU
+ * 
+ * Simple 2-stage pipeline for comparison with 7-stage.
+ * 
+ * Pipeline stages:
+ *   IF -> EX
+ *   Fetch  Execute (includes decode, execute, memory, writeback)
+ * 
+ * This is the simplest pipelined design with:
+ * - No data hazards (execute completes before next fetch uses result)
+ * - Control hazards on branches (1 cycle penalty)
+ */
+class CPURV64P2 : public CPU {
 public:
     using BaseType = std::uint64_t;
 
-    CPURV64P(sc_core::sc_module_name const& name, BaseType PC, bool debug);
-    ~CPURV64P() override;
+    CPURV64P2(sc_core::sc_module_name const& name, BaseType PC, bool debug);
+    ~CPURV64P2() override;
 
     void set_clock(sc_core::sc_clock* c) override { clk = c; }
 
@@ -39,37 +52,40 @@ public:
 
     bool isPipelined() const override { return true; }
 
-private:
-    struct IFID {
-        BaseType pc{0};
-        std::uint32_t instr{0};
-        bool valid{false};
+    // Pipeline statistics
+    struct PipelineStats {
+        uint64_t cycles{0};
+        uint64_t stalls{0};
+        uint64_t flushes{0};
+        uint64_t control_hazards{0};
     };
+    
+    PipelineStats getStats() const { return stats; }
 
+private:
+    // =========================================================================
+    // Architectural State
+    // =========================================================================
     Registers<BaseType>*     register_bank{nullptr};
     BASE_ISA<BaseType>*      base_inst{nullptr};
     C_extension<BaseType>*   c_inst{nullptr};
     M_extension<BaseType>*   m_inst{nullptr};
     A_extension<BaseType>*   a_inst{nullptr};
 
-    tlm::tlm_generic_payload trans{};
-    unsigned char*           dmi_ptr{nullptr};
-    bool                     dmi_ptr_valid{false};
+    // Instruction fetch
+    std::uint32_t INSTR{0};
 
+    // IRQ bookkeeping
     BaseType int_cause{0};
 
-    IFID if_id{}, if_id_next{};
     sc_core::sc_clock* clk{nullptr};
 
-    void stageIF();
-    void stageID() {}
-    void stageEX() {}
-    void stageMEM() {}
-    void stageWB(bool &breakpoint);
+    // Statistics
+    PipelineStats stats{};
 
     void invalidate_direct_mem_ptr(sc_dt::uint64, sc_dt::uint64) { dmi_ptr_valid = false; }
 };
 
 } // namespace riscv_tlm
 
-#endif // CPU_P64_H
+#endif // CPU_P64_2_H

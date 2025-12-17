@@ -19,11 +19,14 @@
 
 #include "VPTop.h"
 #include "Performance.h"
+#if defined(ENABLE_PIPELINED_ISS)
+#include "CPU_P32_2.h"
+#include "CPU_P64_2.h"
+#endif
 
-// Add spdlog includes to ensure a default logger is available
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/basic_file_sink.h"
-#include "spdlog/sinks/null_sink.h"  // Added for fallback
+#include "spdlog/sinks/null_sink.h"
 
 static vp::VPTop *g_top = nullptr;
 
@@ -33,29 +36,28 @@ static void intHandler(int dummy) {
         g_top = nullptr;
     }
     (void)dummy;
-    // Use sc_stop() if possible, otherwise exit cleanly
     if (sc_core::sc_get_status() != sc_core::SC_STOPPED) {
         sc_core::sc_stop();
     }
-    std::exit(0);  // Changed to exit(0) for clean exit
+    std::exit(0);
 }
 
 struct Options {
     std::string hex_file;
     bool debug = false;
     riscv_tlm::cpu_types_t cpu_type = riscv_tlm::RV32;
-    double timeout_sec = -1.0; // <=0 means run until program stops
-    std::uint64_t max_instructions = 0; // 0 means no instruction cap
-    bool pipelined_rv32 =
-    #if defined(ENABLE_PIPELINED_ISS)
-        true;
-    #else
-        false;
-    #endif
+    double timeout_sec = -1.0;
+    std::uint64_t max_instructions = 0;
 };
 
 static void usage(const char* exe) {
-    std::cout << "Usage: " << exe << " -f <file.hex> [-R 32|64] [-D] [-t <seconds>] [--max-instr <N>] [--rv32-pipe on|off]\n";
+    std::cout << "Usage: " << exe << " -f <file.hex> [-R 32|64] [-D] [-t <seconds>] [--max-instr <N>]\n";
+    std::cout << "\nOptions:\n";
+    std::cout << "  -f, --file <file.hex>   Input hex file (required)\n";
+    std::cout << "  -R, --arch 32|64        Architecture: RV32 or RV64 (default: 32)\n";
+    std::cout << "  -D, --debug             Enable debug mode\n";
+    std::cout << "  -t, --timeout <sec>     Wall-clock timeout in seconds\n";
+    std::cout << "  --max-instr <N>         Maximum instructions to execute\n";
 }
 
 static Options parse(int argc, char* argv[]) {
@@ -83,16 +85,9 @@ static Options parse(int argc, char* argv[]) {
                 std::exit(1);
             }
             o.max_instructions = val;
-        } else if ((std::strcmp(argv[i], "--rv32-pipe") == 0) && i+1 < argc) {
-            const char* v = argv[++i];
-            if (std::strcmp(v, "on") == 0 || std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0) {
-                o.pipelined_rv32 = true;
-            } else if (std::strcmp(v, "off") == 0 || std::strcmp(v, "0") == 0 || std::strcmp(v, "false") == 0) {
-                o.pipelined_rv32 = false;
-            } else {
-                usage(argv[0]);
-                std::exit(1);
-            }
+        } else if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0) {
+            usage(argv[0]);
+            std::exit(0);
         } else {
             usage(argv[0]);
             std::exit(1);
@@ -111,7 +106,7 @@ int sc_main(int argc, char* argv[]) {
 
     const auto opts = parse(argc, argv);
 
-    // Ensure a default logger exists - improved error handling
+    // Setup logger
     try {
         auto existing = spdlog::get("my_logger");
         if (!existing) {
@@ -121,7 +116,6 @@ int sc_main(int argc, char* argv[]) {
             logger->set_level(spdlog::level::info);
         }
     } catch (const std::exception& e) {
-        // Create null logger as fallback to prevent crashes
         std::cerr << "Warning: Could not setup file logger (" << e.what() << "), using null logger\n";
         auto null_sink = std::make_shared<spdlog::sinks::null_sink_mt>();
         auto logger = std::make_shared<spdlog::logger>("my_logger", null_sink);
@@ -130,7 +124,7 @@ int sc_main(int argc, char* argv[]) {
 
     auto perf = Performance::getInstance();
 
-    std::cout << "RISC-V VP starting\n";
+    std::cout << "RISC-V VP starting (2-stage pipeline)\n";
     std::cout << "  file: " << opts.hex_file << "\n";
     std::cout << "  arch: " << (opts.cpu_type == riscv_tlm::RV32 ? "RV32" : "RV64") << "\n";
     std::cout << "  dbg : " << (opts.debug ? "on" : "off") << "\n";
@@ -140,15 +134,12 @@ int sc_main(int argc, char* argv[]) {
     if (opts.max_instructions > 0) {
         std::cout << "  max : " << opts.max_instructions << " instr\n";
     }
-    if (opts.cpu_type == riscv_tlm::RV32) {
-        std::cout << "  pipe: " << (opts.pipelined_rv32 ? "on" : "off") << "\n";
-    }
+    std::cout << "  pipe: 2-stage (IF -> EX)\n";
 
-    g_top = new vp::VPTop("vp_top", opts.hex_file, opts.cpu_type, opts.debug, opts.pipelined_rv32);
+    g_top = new vp::VPTop("vp_top", opts.hex_file, opts.cpu_type, opts.debug);
 
     auto wall_start = std::chrono::steady_clock::now();
 
-    // Run simulation in chunks to allow checking progress/limits
     const sc_core::sc_time quantum(1, sc_core::SC_MS);
     bool timed_out = false;
     bool reached_instr_limit = false;
@@ -156,25 +147,22 @@ int sc_main(int argc, char* argv[]) {
     while (true) {
         sc_core::sc_start(quantum);
 
-        // Check timeout condition
         if (opts.timeout_sec > 0) {
             auto now = std::chrono::steady_clock::now();
             std::chrono::duration<double> wall_elapsed = now - wall_start;
             if (wall_elapsed.count() >= opts.timeout_sec) {
                 timed_out = true;
                 sc_core::sc_stop();
-                break;  // Added explicit break for clarity
+                break;
             }
         }
         
-        // Check instruction limit
         if (opts.max_instructions > 0 && perf->getInstructions() >= opts.max_instructions) {
             reached_instr_limit = true;
             sc_core::sc_stop();
-            break;  // Added explicit break for clarity
+            break;
         }
         
-        // Stop if the kernel reports stopped (e.g., via tohost or exceptions)
         if (sc_core::sc_get_status() == sc_core::SC_STOPPED) {
             break;
         }
@@ -183,7 +171,6 @@ int sc_main(int argc, char* argv[]) {
     auto wall_end = std::chrono::steady_clock::now();
 
     std::chrono::duration<double> elapsed = wall_end - wall_start;
-    double ips = elapsed.count() > 0.0 ? static_cast<double>(perf->getInstructions()) / elapsed.count() : 0.0;
 
     if (timed_out) {
         std::cout << "Stopped due to timeout." << std::endl;
@@ -192,14 +179,44 @@ int sc_main(int argc, char* argv[]) {
         std::cout << "Stopped after reaching instruction limit." << std::endl;
     }
 
-    std::cout << "Total elapsed time: " << elapsed.count() << "s\n";
-    // Removed instr/sec to focus on IPC
-    const sc_core::sc_time clk_period(10, sc_core::SC_NS);
-    sc_core::sc_time sim_time = sc_core::sc_time_stamp();
-    double cycles = sim_time / clk_period;
-    double ipc = cycles > 0.0 ? static_cast<double>(perf->getInstructions()) / cycles : 0.0;
-    std::cout << "Cycles: " << static_cast<unsigned long long>(cycles)
-              << "\nInstr/Cycle: " << std::fixed << std::setprecision(3) << ipc << "\n";
+    std::cout << "\n=== Simulation Results ===\n";
+    std::cout << "Wall time:    " << std::fixed << std::setprecision(3) << elapsed.count() << " s\n";
+    std::cout << "Instructions: " << perf->getInstructions() << "\n";
+
+    // Print 2-stage pipeline statistics
+#if defined(ENABLE_PIPELINED_ISS)
+    if (g_top && g_top->cpu && g_top->cpu->isPipelined()) {
+        std::cout << "\n=== Pipeline Statistics (2-stage) ===\n";
+        
+        // Try 2-stage RV64
+        auto* cpu64p2 = dynamic_cast<riscv_tlm::CPURV64P2*>(g_top->cpu);
+        if (cpu64p2) {
+            auto stats = cpu64p2->getStats();
+            std::cout << "  Pipeline cycles:    " << stats.cycles << "\n";
+            std::cout << "  Pipeline stalls:    " << stats.stalls << "\n";
+            std::cout << "  Pipeline flushes:   " << stats.flushes << "\n";
+            std::cout << "  Control hazards:    " << stats.control_hazards << "\n";
+            if (stats.cycles > 0) {
+                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
+                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << "\n";
+            }
+        }
+        
+        // Try 2-stage RV32
+        auto* cpu32p2 = dynamic_cast<riscv_tlm::CPURV32P2*>(g_top->cpu);
+        if (cpu32p2) {
+            auto stats = cpu32p2->getStats();
+            std::cout << "  Pipeline cycles:    " << stats.cycles << "\n";
+            std::cout << "  Pipeline stalls:    " << stats.stalls << "\n";
+            std::cout << "  Pipeline flushes:   " << stats.flushes << "\n";
+            std::cout << "  Control hazards:    " << stats.control_hazards << "\n";
+            if (stats.cycles > 0) {
+                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
+                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << "\n";
+            }
+        }
+    }
+#endif
 
     delete g_top;
     g_top = nullptr;
