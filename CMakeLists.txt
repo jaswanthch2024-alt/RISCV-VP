@@ -117,7 +117,7 @@ target_compile_definitions(riscv_tlm_core PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)
 # Ensure public headers are visible to dependents
 target_include_directories(riscv_tlm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc ${SystemC_INCLUDE_DIRS})
 
-# If pipelined ISS is enabled, add 2-stage pipeline sources
+# If pipelined ISS is enabled, add 2-stage pipeline sources (for VP only)
 if(ENABLE_PIPELINED_ISS)
   target_sources(riscv_tlm_core PRIVATE 
     src/CPU_P32_2.cpp 
@@ -127,7 +127,12 @@ if(ENABLE_PIPELINED_ISS)
   target_include_directories(riscv_tlm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
 endif()
 
-# Legacy simulator executable
+# Always add simple non-pipelined CPU (for TLM simulator)
+target_sources(riscv_tlm_core PRIVATE 
+  src/CPU_Simple.cpp
+)
+
+# Legacy simulator executable (uses non-pipelined LT CPU)
 add_executable(RISCV_TLM ${SRC_SIMULATOR})
 target_link_libraries(RISCV_TLM PRIVATE riscv_tlm_core)
 # No extra /O2 on MSVC to avoid conflicting with build type
