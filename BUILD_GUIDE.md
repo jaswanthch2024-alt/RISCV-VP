@@ -154,7 +154,7 @@ The simulator requires a RISC-V program in Intel HEX format (`.hex` file).
 | Argument | Description | Example |
 |----------|-------------|---------|
 | `-f <file>` | Hex file to execute | `-f test.hex` |
-| `-R <32\|64>` | Architecture (32-bit or 64-bit) | `-R 32` |
+| `-R <32 or 64>` | Architecture (32-bit or 64-bit) | `-R 32` |
 | `-L <level>` | Log level (0=ERROR, 3=INFO) | `-L 3` |
 | `-D` | Enable debug mode (GDB server) | `-D` |
 
