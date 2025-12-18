@@ -1,6 +1,6 @@
 /*!
  \file Simulator.cpp
- \brief Top level simulation entity
+ \brief Top level simulation entity (Loosely-Timed, non-pipelined)
  \author Màrius Montón
  \date September 2018
  */
@@ -35,21 +35,19 @@ int getopt_long(int argc, char* const argv[], const char* optstring, const optio
 #include <cstdlib>
 
 #include "CPU.h"
+#include "CPU_Simple.h"
 #include "BusCtrl.h"
 #include "Trace.h"
 #include "Timer.h"
 #include "Debug.h"
 #include "Performance.h"
 
-// New peripherals to match BusCtrl initiator sockets
+// Peripherals
 #include "UART.h"
 #include "CLINT.h"
 #include "PLIC.h"
 #include "DMA.h"
 #include "SyscallIf.h"
-
-#include "CPU_P32_2.h"
-#include "CPU_P64_2.h"
 
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/basic_file_sink.h"
@@ -66,10 +64,10 @@ riscv_tlm::cpu_types_t cpu_type_opt = riscv_tlm::RV32;
 
 /**
  * @class Simulator
- * This class instantiates all necessary modules, connects its ports and starts
- * the simulation.
- *
- * @brief Top simulation entity
+ * @brief Top simulation entity using Loosely-Timed (LT) non-pipelined CPU
+ * 
+ * This simulator uses simple functional CPU models without pipeline timing.
+ * For pipelined simulation with AT timing, use RISCV_VP instead.
  */
 class Simulator : sc_core::sc_module {
 public:
@@ -100,11 +98,11 @@ public:
 
         cpu_type = cpu_type_m;
 
-        // Create 2-stage pipelined CPU based on architecture
+        // Create simple non-pipelined CPU (LT model)
         if (cpu_type == riscv_tlm::RV32) {
-            cpu = new riscv_tlm::CPURV32P2("cpu", start_PC, debug_session);
+            cpu = new riscv_tlm::CPURV32Simple("cpu", start_PC, debug_session);
         } else {
-            cpu = new riscv_tlm::CPURV64P2("cpu", start_PC, debug_session);
+            cpu = new riscv_tlm::CPURV64Simple("cpu", start_PC, debug_session);
         }
         cpu->set_clock(&clk);
 
@@ -133,7 +131,7 @@ public:
         timer->irq_line.bind(cpu->irq_line_socket);
 
         if (debug_session) {
-            std::cout << "[Debug] GDB debugging not fully supported for pipelined CPUs." << std::endl;
+            std::cout << "[Debug] GDB debugging enabled." << std::endl;
         }
     }
 
@@ -315,10 +313,10 @@ int sc_main(int argc, char *argv[]) {
         spdlog::register_logger(logger);
     }
 
-    std::cout << "RISC-V TLM Simulator starting (2-stage pipeline)" << std::endl;
+    std::cout << "RISC-V TLM Simulator (Loosely-Timed, non-pipelined)" << std::endl;
     std::cout << "  file: " << filename << std::endl;
     std::cout << "  arch: " << (cpu_type_opt == riscv_tlm::RV32 ? "RV32" : "RV64") << std::endl;
-    std::cout << "  pipe: 2-stage (IF -> EX)" << std::endl;
+    std::cout << "  mode: LT (functional)" << std::endl;
 
     top = new Simulator("top", cpu_type_opt);
 
@@ -342,35 +340,6 @@ int sc_main(int argc, char *argv[]) {
     std::cout << "\n=== Simulation Results ===" << std::endl;
     std::cout << "Wall time:    " << std::fixed << std::setprecision(3) << elapsed_seconds.count() << " s" << std::endl;
     std::cout << "Instructions: " << perf->getInstructions() << std::endl;
-
-    // Print 2-stage pipeline statistics
-    if (top->cpu && top->cpu->isPipelined()) {
-        std::cout << "\n=== Pipeline Statistics (2-stage) ===" << std::endl;
-        
-        auto* cpu64p2 = dynamic_cast<riscv_tlm::CPURV64P2*>(top->cpu);
-        if (cpu64p2) {
-            auto stats = cpu64p2->getStats();
-            std::cout << "  Pipeline cycles:    " << stats.cycles << std::endl;
-            std::cout << "  Pipeline flushes:   " << stats.flushes << std::endl;
-            std::cout << "  Control hazards:    " << stats.control_hazards << std::endl;
-            if (stats.cycles > 0) {
-                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
-                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << std::endl;
-            }
-        }
-        
-        auto* cpu32p2 = dynamic_cast<riscv_tlm::CPURV32P2*>(top->cpu);
-        if (cpu32p2) {
-            auto stats = cpu32p2->getStats();
-            std::cout << "  Pipeline cycles:    " << stats.cycles << std::endl;
-            std::cout << "  Pipeline flushes:   " << stats.flushes << std::endl;
-            std::cout << "  Control hazards:    " << stats.control_hazards << std::endl;
-            if (stats.cycles > 0) {
-                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
-                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << std::endl;
-            }
-        }
-    }
 
     if (!mem_dump && max_instructions_limit == 0) {
         std::cout << "Press Enter to finish" << std::endl;

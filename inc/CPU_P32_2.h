@@ -21,17 +21,18 @@
 namespace riscv_tlm {
 
 /**
- * @brief 2-Stage Pipelined RISC-V 32-bit CPU
- * 
- * Simple 2-stage pipeline for comparison with 7-stage.
+ * @brief 2-Stage Pipelined RISC-V 32-bit CPU with AT timing (for VP)
  * 
  * Pipeline stages:
- *   IF -> EX
- *   Fetch  Execute (includes decode, execute, memory, writeback)
+ *   IF  -> EX
+ *   Fetch  Decode+Execute+Memory+Writeback
  * 
- * This is the simplest pipelined design with:
- * - No data hazards (execute completes before next fetch uses result)
- * - Control hazards on branches (1 cycle penalty)
+ * This is an Approximately-Timed (AT) model that:
+ * - Waits for actual clock cycles
+ * - Models branch flush penalties
+ * - Provides cycle-accurate statistics
+ * 
+ * For fast functional simulation, use CPURV32Simple instead.
  */
 class CPURV32P2 : public CPU {
 public:
@@ -82,6 +83,9 @@ private:
 
     // Statistics
     PipelineStats stats{};
+
+    // Clock period for AT timing
+    sc_core::sc_time clock_period{10, sc_core::SC_NS};
 
     void invalidate_direct_mem_ptr(sc_dt::uint64, sc_dt::uint64) { dmi_ptr_valid = false; }
 };

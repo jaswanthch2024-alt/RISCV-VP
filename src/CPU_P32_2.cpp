@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * @file CPU_P32_2.cpp
- * @brief 2-Stage Pipelined RISC-V 32-bit CPU Implementation
+ * @brief 2-Stage Pipelined RISC-V 32-bit CPU Implementation (AT model for VP)
  * 
- * Simple 2-stage pipeline: IF -> EX
+ * Approximately-Timed (AT) 2-stage pipeline: IF -> EX
  * - IF: Fetch instruction
- * - EX: Decode, Execute, Memory, Writeback
+ * - EX: Decode + Execute + Memory + Writeback
  * 
- * This is the simplest pipelined design providing ~1 IPC for non-branch code.
+ * This model waits for actual clock cycles to provide timing accuracy.
+ * Branch taken causes 1-cycle flush penalty.
  */
 #include "CPU_P32_2.h"
 #include "spdlog/spdlog.h"
@@ -39,8 +40,8 @@ CPURV32P2::CPURV32P2(sc_core::sc_module_name const& name, BaseType PC, bool debu
     trans.set_dmi_allowed(false);
     trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
 
-    logger->info("Created CPURV32P2 (2-stage pipelined) CPU");
-    std::cout << "Created CPURV32P2 (2-stage pipelined) CPU" << std::endl;
+    logger->info("Created CPURV32P2 (2-stage AT pipelined) CPU for VP");
+    std::cout << "Created CPURV32P2 (2-stage AT pipelined) CPU for VP" << std::endl;
 }
 
 CPURV32P2::~CPURV32P2() {
@@ -59,7 +60,7 @@ bool CPURV32P2::CPU_step() {
     stats.cycles++;
 
     // =========================================================================
-    // Stage 1: Fetch instruction
+    // Stage 1: Fetch instruction (IF)
     // =========================================================================
     if (dmi_ptr_valid) {
         std::memcpy(&INSTR, dmi_ptr + register_bank->getPC(), 4);
@@ -85,7 +86,7 @@ bool CPURV32P2::CPU_step() {
     inst.setInstr(INSTR);
 
     // =========================================================================
-    // Stage 2: Decode, Execute, Memory, Writeback (all in one stage)
+    // Stage 2: Decode, Execute, Memory, Writeback (EX)
     // =========================================================================
     bool pc_changed = false;
     bool is_branch = false;
@@ -147,15 +148,17 @@ bool CPURV32P2::CPU_step() {
     }
 
     // =========================================================================
-    // Model 2-stage pipeline timing
+    // AT Timing Model: Wait for clock cycles
     // =========================================================================
-    // - 1 cycle base for all instructions (IF and EX overlapped)
-    // - +1 cycle for branch taken (flush IF stage)
+    // Base: 1 cycle per instruction
+    sc_core::wait(clock_period);
 
+    // Branch taken: +1 cycle penalty (flush IF stage)
     if (is_branch && pc_changed) {
-        stats.cycles++;  // +1 cycle penalty for branch taken
+        stats.cycles++;
         stats.flushes++;
         stats.control_hazards++;
+        sc_core::wait(clock_period);  // Wait for flush penalty
     }
 
     perf->instructionsInc();
@@ -192,9 +195,10 @@ bool CPURV32P2::cpu_process_IRQ() {
             BaseType new_pc = register_bank->getCSR(CSR_MTVEC);
             register_bank->setPC(new_pc);
 
-            // Pipeline flush on interrupt (flush 1 stage)
+            // Pipeline flush on interrupt (flush 1 stage + latency)
             stats.flushes++;
             stats.cycles += 2;
+            sc_core::wait(clock_period * 2);  // AT: wait for IRQ latency
 
             ret_value = true;
             interrupt = false;
