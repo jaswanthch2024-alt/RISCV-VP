@@ -112,19 +112,23 @@ The simulator includes several TLM-2 peripherals:
     - 0x40004008: Comparator MSB
     - 0x4000400C: Comparator LSB
 
-- **UART** (UART.h/cpp)
+- **UART** (UART.h)
   - Standard UART peripheral model
+  - Header-only implementation
 
-- **CLINT** (CLINT.h/cpp)
+- **CLINT** (CLINT.h)
   - Core-Local Interruptor
   - Timer interrupts
+  - Header-only implementation
 
-- **PLIC** (PLIC.h/cpp)
+- **PLIC** (PLIC.h)
   - Platform-Level Interrupt Controller
+  - Header-only implementation
 
-- **DMA** (DMA.h/cpp)
+- **DMA** (DMA.h)
   - Direct Memory Access controller
   - Base address: 0x30000000
+  - Header-only implementation
 
 ### 7. Debug Support
 
@@ -210,9 +214,10 @@ Note: 7-stage pipeline variants (CPU_P32/CPU_P64) are excluded from build.
 tests/
 ├── full_system/
 │   └── robust_system_test.c  # Comprehensive system test
-├── hex/                      # Compiled hex binaries
 └── vp_overall_test.cpp      # VP integration test
 ```
+
+Note: Compiled hex binaries are created in `tests/hex/` during build if `BUILD_ROBUST_HEX` option is enabled.
 
 ### Test Coverage
 - **robust_system_test.c**: Comprehensive test covering:
@@ -295,11 +300,14 @@ riscv32-unknown-elf-objcopy -O ihex program.elf program.hex
 | Address      | Module | Description             |
 |--------------|--------|-------------------------|
 | 0x40000000   | Trace  | Output to xterm         |
-| 0x40004000   | Timer  | LSB Timer               |
-| 0x40004004   | Timer  | MSB Timer               |
-| 0x40004008   | Timer  | MSB Timer Comparator    |
-| 0x4000400C   | Timer  | LSB Timer Comparator    |
+| 0x40004000   | Timer  | Timer LSB               |
+| 0x40004004   | Timer  | Timer MSB               |
+| 0x40004008   | Timer  | Timer Comparator LSB    |
+| 0x4000400C   | Timer  | Timer Comparator MSB    |
 | 0x30000000   | DMA    | DMA Controller base     |
+| 0x10000000   | UART   | UART0 base              |
+| 0x02000000   | CLINT  | Core-Local Interruptor  |
+| 0x0C000000   | PLIC   | Interrupt Controller    |
 
 ## Current Status & TODO
 
