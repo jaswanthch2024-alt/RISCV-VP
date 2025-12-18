@@ -509,31 +509,6 @@ If you use this simulator in your research, please cite:
 
 ---
 
-## 🎯 Project Status
 
-**Current Version**: Production-ready  
-**Active Development**: Yes  
-**Last Updated**: December 2025
-
-### Recent Updates
-- ✅ Comprehensive documentation added
-- ✅ Build guide for supervisors
-- ✅ Current status tracking
-- ✅ Enhanced error handling
-- ✅ Improved CMake configuration
-
-### Upcoming Features
-- 🚧 F extension (Floating-point) completion
-- 🚧 Enhanced debugging capabilities
-- 🚧 Additional peripheral models
-- 🚧 Performance optimizations
-
----
-
-<div align="center">
-
-**⭐ Star this repository if you find it useful! ⭐**
-
-Made with ❤️ for the RISC-V community
 
 </div>
