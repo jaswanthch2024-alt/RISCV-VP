@@ -123,8 +123,9 @@ namespace riscv_tlm::peripherals {
             }
         }
 #else
-    }
+        // Windows: no xterm, just stdout fallback handled elsewhere
 #endif
+    }
 
     SC_HAS_PROCESS(Trace);
 

@@ -64,8 +64,14 @@ doc/html
 /build/
 /build-*/
 /build-vs/
+/build_plain/
+/build_pipe/
+/build_nopipe/
 /out/
 /dist/
+/logs/
+/Testing/
+/Testing/Temporary/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * @file CPU_P64_2.cpp
- * @brief 2-Stage Pipelined RISC-V 64-bit CPU Implementation (AT model for VP)
+ * @brief 2-Stage Pipelined RISC-V 64-bit CPU Implementation
  * 
- * Approximately-Timed (AT) 2-stage pipeline: IF -> EX
- * - IF: Fetch instruction
+ * True 2-stage pipeline: IF -> [LATCH] -> EX
+ * - IF: Fetch instruction, load into latch
  * - EX: Decode + Execute + Memory + Writeback
  * 
- * This model waits for actual clock cycles to provide timing accuracy.
+ * Pipeline latch holds instruction between stages.
  * Branch taken causes 1-cycle flush penalty.
  */
 #include "CPU_P64_2.h"
@@ -32,7 +32,7 @@ CPURV64P2::CPURV64P2(sc_core::sc_module_name const& name, BaseType PC, bool debu
     m_inst    = new M_extension<BaseType>(0, register_bank, mem_intf);
     a_inst    = new A_extension<BaseType>(0, register_bank, mem_intf);
 
-    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&INSTR));
+    trans.set_data_ptr(reinterpret_cast<unsigned char*>(&if_ex_latch.instruction));
     trans.set_command(tlm::TLM_READ_COMMAND);
     trans.set_data_length(4);
     trans.set_streaming_width(4);
@@ -40,8 +40,14 @@ CPURV64P2::CPURV64P2(sc_core::sc_module_name const& name, BaseType PC, bool debu
     trans.set_dmi_allowed(false);
     trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
 
-    logger->info("Created CPURV64P2 (2-stage AT pipelined) CPU for VP");
-    std::cout << "Created CPURV64P2 (2-stage AT pipelined) CPU for VP" << std::endl;
+    // Initialize pipeline latch (empty on startup - first cycle is IF only)
+    if_ex_latch.instruction = 0;
+    if_ex_latch.pc = 0;
+    if_ex_latch.valid = false;
+    pipeline_flush = false;
+
+    logger->info("Created CPURV64P2 (2-stage pipelined) CPU for VP");
+    std::cout << "Created CPURV64P2 (2-stage pipelined) CPU for VP" << std::endl;
 }
 
 CPURV64P2::~CPURV64P2() {
@@ -54,20 +60,28 @@ CPURV64P2::~CPURV64P2() {
     delete m_qk;
 }
 
-bool CPURV64P2::CPU_step() {
-    bool breakpoint = false;
-    
-    stats.cycles++;
+// =============================================================================
+// IF Stage: Fetch instruction from memory
+// =============================================================================
+void CPURV64P2::IF_stage() {
+    // If flush requested, insert bubble (invalid latch)
+    if (pipeline_flush) {
+        if_ex_latch.valid = false;
+        if_ex_latch.instruction = 0;
+        if_ex_latch.pc = 0;
+        pipeline_flush = false;  // Clear flush flag
+        return;
+    }
 
-    // =========================================================================
-    // Stage 1: Fetch instruction (IF)
-    // =========================================================================
+    // Fetch instruction at current PC
+    std::uint64_t current_pc = register_bank->getPC();
+
     if (dmi_ptr_valid) {
-        std::memcpy(&INSTR, dmi_ptr + register_bank->getPC(), 4);
+        std::memcpy(&if_ex_latch.instruction, dmi_ptr + current_pc, 4);
     } else {
         sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
         tlm::tlm_dmi dmi_data;
-        trans.set_address(register_bank->getPC());
+        trans.set_address(current_pc);
         trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
         instr_bus->b_transport(trans, delay);
 
@@ -82,30 +96,53 @@ bool CPURV64P2::CPU_step() {
         }
     }
 
-    perf->codeMemoryRead();
-    inst.setInstr(INSTR);
+    // Load latch with fetched instruction
+    if_ex_latch.pc = current_pc;
+    if_ex_latch.valid = true;
 
-    // =========================================================================
-    // Stage 2: Decode, Execute, Memory, Writeback (EX)
-    // =========================================================================
+    // Speculatively increment PC (assumes branch not taken)
+    // Check if compressed instruction (16-bit)
+    if ((if_ex_latch.instruction & 0x3) != 0x3) {
+        register_bank->incPCby2();  // Compressed instruction
+    } else {
+        register_bank->incPC();     // Normal 32-bit instruction
+    }
+
+    perf->codeMemoryRead();
+}
+
+// =============================================================================
+// EX Stage: Decode and execute instruction from latch
+// =============================================================================
+bool CPURV64P2::EX_stage() {
+    bool breakpoint = false;
+
+    // If latch is invalid (bubble), do nothing
+    if (!if_ex_latch.valid) {
+        stats.stalls++;
+        return false;
+    }
+
+    // Get instruction from latch
+    std::uint32_t instr = if_ex_latch.instruction;
+    inst.setInstr(instr);
+
     bool pc_changed = false;
     bool is_branch = false;
 
-    // Try BASE ISA first
-    base_inst->setInstr(INSTR);
+    // Decode and execute using extension handlers
+    base_inst->setInstr(instr);
     auto deco = base_inst->decode();
 
     if (deco != OP_ERROR) {
-        std::uint32_t opcode = INSTR & 0x7F;
+        // Check if branch instruction
+        std::uint32_t opcode = instr & 0x7F;
         is_branch = (opcode == 0x63 || opcode == 0x6F || opcode == 0x67);
 
         pc_changed = !base_inst->exec_instruction(inst, &breakpoint, deco);
-        if (!pc_changed) {
-            register_bank->incPC();
-        }
     } else {
         // Try C extension
-        c_inst->setInstr(INSTR);
+        c_inst->setInstr(instr);
         auto c_deco = c_inst->decode();
 
         if (c_deco != OP_C_ERROR) {
@@ -114,54 +151,69 @@ bool CPURV64P2::CPU_step() {
                         c_deco == OP_C_BEQZ || c_deco == OP_C_BNEZ);
 
             pc_changed = !c_inst->exec_instruction(inst, &breakpoint, c_deco);
-            if (!pc_changed) {
-                register_bank->incPCby2();
-            }
         } else {
             // Try M extension
-            m_inst->setInstr(INSTR);
+            m_inst->setInstr(instr);
             auto m_deco = m_inst->decode();
 
             if (m_deco != OP_M_ERROR) {
                 pc_changed = !m_inst->exec_instruction(inst, m_deco);
-                if (!pc_changed) {
-                    register_bank->incPC();
-                }
             } else {
                 // Try A extension
-                a_inst->setInstr(INSTR);
+                a_inst->setInstr(instr);
                 auto a_deco = a_inst->decode();
 
                 if (a_deco != OP_A_ERROR) {
                     pc_changed = !a_inst->exec_instruction(inst, a_deco);
-                    if (!pc_changed) {
-                        register_bank->incPC();
-                    }
                 } else {
                     std::cout << "Extension not implemented yet" << std::endl;
                     inst.dump();
                     base_inst->NOP();
-                    register_bank->incPC();
                 }
             }
         }
     }
 
-    // =========================================================================
-    // AT Timing Model: Wait for clock cycles
-    // =========================================================================
-    // Base: 1 cycle per instruction
-    sc_core::wait(clock_period);
-
-    // Branch taken: +1 cycle penalty (flush IF stage)
+    // If branch taken, flush the IF stage (next cycle will be bubble)
     if (is_branch && pc_changed) {
-        stats.cycles++;
+        pipeline_flush = true;
         stats.flushes++;
         stats.control_hazards++;
-        sc_core::wait(clock_period);  // Wait for flush penalty
     }
 
     perf->instructionsInc();
+    return breakpoint;
+}
+
+// =============================================================================
+// CPU_step: Execute one pipeline cycle
+// =============================================================================
+bool CPURV64P2::CPU_step() {
+    bool breakpoint = false;
+
+    stats.cycles++;
+
+    // =========================================================================
+    // Pipeline Execution Order (simulates parallel execution)
+    // 
+    // On a real CPU, both stages execute simultaneously on clock edge.
+    // In simulation, we execute EX first (uses old latch), then IF (updates latch).
+    // This models the latch being written by IF and read by EX on same cycle.
+    // =========================================================================
+
+    // EX Stage: Execute instruction from latch (uses previous IF result)
+    breakpoint = EX_stage();
+
+    // IF Stage: Fetch next instruction (updates latch for next cycle)
+    IF_stage();
+
+    // Account for flush penalty in cycle count
+    if (pipeline_flush) {
+        stats.cycles++;  // Flush costs 1 extra cycle
+    }
+
+    // LT timing: one clock cycle
+    sc_core::wait(sc_core::sc_time(10, sc_core::SC_NS));
 
     return breakpoint;
 }
@@ -195,10 +247,11 @@ bool CPURV64P2::cpu_process_IRQ() {
             BaseType new_pc = register_bank->getCSR(CSR_MTVEC);
             register_bank->setPC(new_pc);
 
-            // Pipeline flush on interrupt (flush 1 stage + latency)
+            // Flush pipeline on interrupt
+            pipeline_flush = true;
+            if_ex_latch.valid = false;
             stats.flushes++;
-            stats.cycles += 2;
-            sc_core::wait(clock_period * 2);  // AT: wait for IRQ latency
+            stats.cycles += 2;  // IRQ latency
 
             ret_value = true;
             interrupt = false;

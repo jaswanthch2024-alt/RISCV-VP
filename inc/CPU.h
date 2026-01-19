@@ -97,6 +97,21 @@ namespace riscv_tlm {
         virtual std::uint64_t getStartDumpAddress() = 0;
         virtual std::uint64_t getEndDumpAddress() = 0;
 
+        /**
+         * @brief AT protocol backward path callback
+         * 
+         * Virtual function for AT model support. Default does nothing (LT models).
+         * AT model CPUs override this to handle non-blocking responses.
+         * 
+         * @param trans TLM transaction
+         * @param phase Current TLM phase
+         * @param delay Annotated delay
+         * @return TLM sync status
+         */
+        virtual tlm::tlm_sync_enum nb_transport_bw(tlm::tlm_generic_payload &trans,
+                                                    tlm::tlm_phase &phase,
+                                                    sc_core::sc_time &delay);
+
     public:
         MemoryInterface *mem_intf;
         

@@ -1,0 +1,26 @@
+{
+  "instructions": 1136,
+  "cycles": 1137,
+  "ipc": 1.0,
+  "elapsed_time": "0.00426791s",
+  "sim_time": "11370 ns",
+  "arch": "RV64",
+  "pipeline": "off",
+  "hex_file": "/mnt/c/Users/jaswa/Source/Repos/RISC-V-TLM/tests/hex/math_test64.hex",
+  "data_reads": 141,
+  "data_writes": 180,
+  "code_reads": 1137,
+  "code_writes": 0,
+  "reg_reads": 1559,
+  "reg_writes": 733,
+  "math_output": {
+    "a": "7568",
+    "b": "93735",
+    "mul": "709386480",
+    "mul_hex": "2A4860F0",
+    "div_ba": "12",
+    "rem_ba": "2919",
+    "div_ab": "0",
+    "rem_ab": "7568"
+  }
+}

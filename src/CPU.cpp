@@ -24,6 +24,9 @@ namespace riscv_tlm {
         interrupt = false;
 
         irq_line_socket.register_b_transport(this, &CPU::call_interrupt);
+        
+        // Register AT backward path - uses virtual dispatch so AT models can override
+        instr_bus.register_nb_transport_bw(this, &CPU::nb_transport_bw);
 
         trans.set_command(tlm::TLM_READ_COMMAND);
 
@@ -42,6 +45,16 @@ namespace riscv_tlm {
         (void) start;
         (void) end;
         dmi_ptr_valid = false;
+    }
+
+    tlm::tlm_sync_enum CPU::nb_transport_bw(tlm::tlm_generic_payload &trans,
+                                             tlm::tlm_phase &phase,
+                                             sc_core::sc_time &delay) {
+        // Default implementation for LT models - just accept and ignore
+        (void)trans;
+        (void)phase;
+        (void)delay;
+        return tlm::TLM_ACCEPTED;
     }
 
     [[noreturn]] void CPU::CPU_thread() {

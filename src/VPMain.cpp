@@ -1,7 +1,7 @@
 /*!
  \file VPMain.cpp
  \brief Virtual Prototype entry point (sc_main) with CLI and stats
- \note Uses Approximately-Timed (AT) 2-stage pipelined CPU
+ \note Uses Loosely-Timed (LT) 2-stage pipelined CPU with behavioral cycle counting
  */
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -53,7 +53,7 @@ struct Options {
 
 static void usage(const char* exe) {
     std::cout << "Usage: " << exe << " -f <file.hex> [-R 32|64] [-D] [-t <seconds>] [--max-instr <N>]\n";
-    std::cout << "\nRISC-V Virtual Prototype with AT 2-stage pipelined CPU\n";
+    std::cout << "\nRISC-V Virtual Prototype with LT 2-stage pipelined CPU\n";
     std::cout << "\nOptions:\n";
     std::cout << "  -f, --file <file.hex>   Input hex file (required)\n";
     std::cout << "  -R, --arch 32|64        Architecture: RV32 or RV64 (default: 32)\n";
@@ -126,10 +126,10 @@ int sc_main(int argc, char* argv[]) {
 
     auto perf = Performance::getInstance();
 
-    std::cout << "RISC-V Virtual Prototype (Approximately-Timed)\n";
+    std::cout << "RISC-V Virtual Prototype (Loosely-Timed with cycle counting)\n";
     std::cout << "  file: " << opts.hex_file << "\n";
     std::cout << "  arch: " << (opts.cpu_type == riscv_tlm::RV32 ? "RV32" : "RV64") << "\n";
-    std::cout << "  mode: AT (cycle-accurate)\n";
+    std::cout << "  mode: LT (behavioral cycle counting)\n";
     std::cout << "  pipe: 2-stage (IF -> EX)\n";
     std::cout << "  dbg : " << (opts.debug ? "on" : "off") << "\n";
     if (opts.timeout_sec > 0) {
@@ -182,7 +182,7 @@ int sc_main(int argc, char* argv[]) {
         std::cout << "Stopped after reaching instruction limit." << std::endl;
     }
 
-    std::cout << "\n=== Simulation Results (AT) ===\n";
+    std::cout << "\n=== Simulation Results (LT) ===\n";
     std::cout << "Wall time:    " << std::fixed << std::setprecision(3) << elapsed.count() << " s\n";
     std::cout << "Sim time:     " << sc_core::sc_time_stamp() << "\n";
     std::cout << "Instructions: " << perf->getInstructions() << "\n";
@@ -190,7 +190,7 @@ int sc_main(int argc, char* argv[]) {
     // Print 2-stage pipeline statistics
 #if defined(ENABLE_PIPELINED_ISS)
     if (g_top && g_top->cpu && g_top->cpu->isPipelined()) {
-        std::cout << "\n=== Pipeline Statistics (2-stage AT) ===\n";
+        std::cout << "\n=== Pipeline Statistics (2-stage LT with cycle counting) ===\n";
         
         // Try 2-stage RV64
         auto* cpu64p2 = dynamic_cast<riscv_tlm::CPURV64P2*>(g_top->cpu);

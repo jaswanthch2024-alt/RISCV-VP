@@ -157,72 +157,90 @@ namespace riscv_tlm {
 
         void Exec_M_MULH() const {
             unsigned int rd, rs1, rs2;
-            std::int64_t multiplier, multiplicand;
-            std::int64_t result;
+            signed_T multiplier, multiplicand;
 
             rd = this->get_rd();
             rs1 = this->get_rs1();
             rs2 = this->get_rs2();
 
-            multiplier = static_cast<std::int64_t>(static_cast<signed_T>(this->regs->getValue(rs1)));
-            multiplicand = static_cast<std::int64_t>(static_cast<signed_T>(this->regs->getValue(rs2)));
-            
-            // For MULH, we need the upper bits of the multiplication
-            result = (multiplier * multiplicand) >> 32;
+            multiplier = static_cast<signed_T>(this->regs->getValue(rs1));
+            multiplicand = static_cast<signed_T>(this->regs->getValue(rs2));
 
-            this->regs->setValue(rd, static_cast<signed_T>(result));
+            if constexpr (sizeof(signed_T) == 4) {
+                std::int64_t prod = static_cast<std::int64_t>(multiplier) * static_cast<std::int64_t>(multiplicand);
+                auto hi = static_cast<signed_T>((prod >> 32) & 0x00000000FFFFFFFF);
+                this->regs->setValue(rd, hi);
+            } else {
+                sc_dt::sc_bigint<128> mul = static_cast<std::int64_t>(multiplier);
+                sc_dt::sc_bigint<128> muld = static_cast<std::int64_t>(multiplicand);
+                sc_dt::sc_bigint<128> res = mul * muld;
+                auto hi = static_cast<signed_T>(res.range(127, 64).to_int64());
+                this->regs->setValue(rd, hi);
+            }
 
-            this->logger->debug("{} ns. PC: 0x{:x}. M.MULH: x{:d}({:d}) * x{:d}({:d}) -> x{:d}({:d})",
+            this->logger->debug("{} ns. PC: 0x{:x}. M.MULH: x{:d}({:d}) * x{:d}({:d}) -> x{:d}(hi)",
                                 sc_core::sc_time_stamp().value(),
                                 this->regs->getPC(),
-                                rs1, multiplier, rs2, multiplicand, rd, result);
+                                rs1, multiplier, rs2, multiplicand, rd);
         }
 
         void Exec_M_MULHSU() const {
             unsigned int rd, rs1, rs2;
-            std::int64_t multiplier;
-            std::uint64_t multiplicand;
-            std::int64_t result;
+            signed_T multiplier;
+            unsigned_T multiplicand;
 
             rd = this->get_rd();
             rs1 = this->get_rs1();
             rs2 = this->get_rs2();
 
-            multiplier = static_cast<std::int64_t>(static_cast<signed_T>(this->regs->getValue(rs1)));
-            multiplicand = static_cast<std::uint64_t>(static_cast<unsigned_T>(this->regs->getValue(rs2)));
-            
-            // For MULHSU, first operand is signed, second is unsigned
-            result = static_cast<std::int64_t>((static_cast<std::uint64_t>(multiplier) * multiplicand) >> 32);
+            multiplier = static_cast<signed_T>(this->regs->getValue(rs1));
+            multiplicand = static_cast<unsigned_T>(this->regs->getValue(rs2));
 
-            this->regs->setValue(rd, static_cast<signed_T>(result));
+            if constexpr (sizeof(signed_T) == 4) {
+                std::int64_t prod = static_cast<std::int64_t>(multiplier) * static_cast<std::uint64_t>(multiplicand);
+                auto hi = static_cast<signed_T>((prod >> 32) & 0x00000000FFFFFFFF);
+                this->regs->setValue(rd, hi);
+            } else {
+                sc_dt::sc_bigint<128> mul = static_cast<std::int64_t>(multiplier);
+                sc_dt::sc_bigint<128> muld = static_cast<std::uint64_t>(multiplicand);
+                sc_dt::sc_bigint<128> res = mul * muld;
+                auto hi = static_cast<signed_T>(res.range(127, 64).to_int64());
+                this->regs->setValue(rd, hi);
+            }
 
-            this->logger->debug("{} ns. PC: 0x{:x}. M.MULHSU: x{:d}({:d}) * x{:d}({:d}) -> x{:d}({:d})",
+            this->logger->debug("{} ns. PC: 0x{:x}. M.MULHSU: x{:d} * x{:d} -> x{:d}(hi)",
                                 sc_core::sc_time_stamp().value(),
                                 this->regs->getPC(),
-                                rs1, multiplier, rs2, multiplicand, rd, result);
+                                rs1, rs2, rd);
         }
 
         void Exec_M_MULHU() const {
             unsigned int rd, rs1, rs2;
-            std::uint64_t multiplier, multiplicand;
-            std::uint64_t result;
+            unsigned_T multiplier, multiplicand;
 
             rd = this->get_rd();
             rs1 = this->get_rs1();
             rs2 = this->get_rs2();
 
-            multiplier = static_cast<std::uint64_t>(static_cast<unsigned_T>(this->regs->getValue(rs1)));
-            multiplicand = static_cast<std::uint64_t>(static_cast<unsigned_T>(this->regs->getValue(rs2)));
-            
-            // For MULHU, both operands are unsigned, return upper bits
-            result = (multiplier * multiplicand) >> 32;
+            multiplier = static_cast<unsigned_T>(this->regs->getValue(rs1));
+            multiplicand = static_cast<unsigned_T>(this->regs->getValue(rs2));
 
-            this->regs->setValue(rd, static_cast<signed_T>(result));
+            if constexpr (sizeof(unsigned_T) == 4) {
+                std::uint64_t prod = static_cast<std::uint64_t>(multiplier) * static_cast<std::uint64_t>(multiplicand);
+                auto hi = static_cast<signed_T>((prod >> 32) & 0x00000000FFFFFFFF);
+                this->regs->setValue(rd, hi);
+            } else {
+                sc_dt::sc_bigint<128> mul = static_cast<std::uint64_t>(multiplier);
+                sc_dt::sc_bigint<128> muld = static_cast<std::uint64_t>(multiplicand);
+                sc_dt::sc_bigint<128> res = mul * muld;
+                auto hi = static_cast<unsigned_T>(res.range(127, 64).to_uint64());
+                this->regs->setValue(rd, hi);
+            }
 
-            this->logger->debug("{} ns. PC: 0x{:x}. M.MULHU: x{:d}({:d}) * x{:d}({:d}) -> x{:d}({:d})",
+            this->logger->debug("{} ns. PC: 0x{:x}. M.MULHU: x{:d} * x{:d} -> x{:d}(hi)",
                                 sc_core::sc_time_stamp().value(),
                                 this->regs->getPC(),
-                                rs1, multiplier, rs2, multiplicand, rd, result);
+                                rs1, rs2, rd);
         }
 
         void Exec_M_DIV() const {
@@ -363,8 +381,8 @@ namespace riscv_tlm {
             rs1 = this->get_rs1();
             rs2 = this->get_rs2();
 
-            dividend = static_cast<std::int32_t>(this->regs->getValue(rs1) & 0x00000000FFFFFFFF);
-            divisor = static_cast<std::int32_t>(this->regs->getValue(rs2) & 0x00000000FFFFFFFF);
+            dividend = static_cast<std::int32_t>(this->regs->getValue(rs1) & 0xFFFFFFFF);
+            divisor = static_cast<std::int32_t>(this->regs->getValue(rs2) & 0xFFFFFFFF);
 
             if (divisor == 0) {
                 result = -1;
@@ -391,8 +409,8 @@ namespace riscv_tlm {
             rs1 = this->get_rs1();
             rs2 = this->get_rs2();
 
-            dividend = static_cast<std::uint32_t>(this->regs->getValue(rs1) & 0x00000000FFFFFFFF);
-            divisor = static_cast<std::uint32_t>(this->regs->getValue(rs2) & 0x00000000FFFFFFFF);
+            dividend = static_cast<std::uint32_t>(this->regs->getValue(rs1) & 0xFFFFFFFF);
+            divisor = static_cast<std::uint32_t>(this->regs->getValue(rs2) & 0xFFFFFFFF);
 
             if (divisor == 0) {
                 result = -1;
@@ -419,8 +437,8 @@ namespace riscv_tlm {
             rs1 = this->get_rs1();
             rs2 = this->get_rs2();
 
-            dividend = static_cast<std::int32_t>(this->regs->getValue(rs1) & 0x00000000FFFFFFFF);
-            divisor = static_cast<std::int32_t>(this->regs->getValue(rs2) & 0x00000000FFFFFFFF);
+            dividend = static_cast<std::int32_t>(this->regs->getValue(rs1) & 0xFFFFFFFF);
+            divisor = static_cast<std::int32_t>(this->regs->getValue(rs2) & 0xFFFFFFFF);
 
             if (divisor == 0) {
                 result = dividend;
@@ -447,8 +465,8 @@ namespace riscv_tlm {
             rs1 = this->get_rs1();
             rs2 = this->get_rs2();
 
-            dividend = static_cast<std::uint32_t>(this->regs->getValue(rs1) & 0x00000000FFFFFFFF);
-            divisor = static_cast<std::uint32_t>(this->regs->getValue(rs2) & 0x00000000FFFFFFFF);
+            dividend = static_cast<std::uint32_t>(this->regs->getValue(rs1) & 0xFFFFFFFF);
+            divisor = static_cast<std::uint32_t>(this->regs->getValue(rs2) & 0xFFFFFFFF);
 
             if (divisor == 0) {
                 result = static_cast<std::int32_t>(dividend);

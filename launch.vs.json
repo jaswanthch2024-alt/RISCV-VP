@@ -1,0 +1,28 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "name": "RISCV_VP (WSL)",
+      "project": "CMakeLists.txt",
+      "projectTarget": "RISCV_VP",
+      "args": ["-f", "tests/hex/hello_fixed.hex", "--max-instr", "100000"],
+      "env": { "TRACE_STDOUT": "1" },
+      "currentDir": "${projectDir}",
+      "remoteMachineName": "WSL",
+      "wslDistribution": "Ubuntu"
+    },
+    {
+      "type": "default",
+      "name": "RISCV_TLM (WSL)",
+      "project": "CMakeLists.txt",
+      "projectTarget": "RISCV_TLM",
+      "args": ["-f", "tests/hex/hello_fixed.hex"],
+      "env": { "TRACE_STDOUT": "1" },
+      "currentDir": "${projectDir}",
+      "remoteMachineName": "WSL",
+      "wslDistribution": "Ubuntu"
+    }
+  ]
+}

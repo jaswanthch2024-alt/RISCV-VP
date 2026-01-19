@@ -1,16 +1,28 @@
 /*!
  \file VPTop.cpp
- \brief Virtual Prototype top-level that assembles CPU, Bus, Memory, Timer, Trace and stub peripherals
+ \brief Virtual Prototype top-level with multi-timing model support
+ \note Supports LT, AT, and CYCLE timing models for CPU, Bus, and Memory
  */
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #define SC_INCLUDE_DYNAMIC_PROCESSES
 
 #include "VPTop.h"
+
+// CPU includes based on timing model
 #if defined(ENABLE_PIPELINED_ISS)
-#include "CPU_P32_2.h"
-#include "CPU_P64_2.h"
+  #if defined(ENABLE_CYCLE_MODEL)
+    #include "CPU_P32_2_Cycle.h"
+    #include "CPU_P64_2_Cycle.h"
+  #elif defined(ENABLE_AT_MODEL)
+    #include "CPU_P32_2_AT.h"
+    #include "CPU_P64_2_AT.h"
+  #else
+    #include "CPU_P32_2.h"
+    #include "CPU_P64_2.h"
+  #endif
 #endif
+
 #ifndef _WIN32
 #include "Debug.h"
 #endif
@@ -36,32 +48,65 @@ VPTop::VPTop(sc_core::sc_module_name const &name,
       m_cpu_type(cpu_type),
       clk("clk", sc_core::sc_time(10, sc_core::SC_NS))
 {
-
     std::uint32_t start_PC;
 
+    // Print timing model being used
+    std::cout << "========================================" << std::endl;
+    std::cout << "Virtual Prototype Timing Model: " 
+              << riscv_tlm::timing_model_name(getTimingModel()) << std::endl;
+    std::cout << "========================================" << std::endl;
+
+    // =========================================================================
+    // Create Memory
+    // =========================================================================
     MainMemory = new riscv_tlm::Memory("Main_Memory", hex_file);
     start_PC = MainMemory->getPCfromHEX();
 
-    // Create 2-stage pipelined CPU based on architecture
+    // =========================================================================
+    // Create CPU based on architecture and timing model
+    // =========================================================================
     if (m_cpu_type == riscv_tlm::RV32) {
-    #if defined(ENABLE_PIPELINED_ISS)
+#if defined(ENABLE_PIPELINED_ISS)
+  #if defined(ENABLE_CYCLE_MODEL)
+        cpu = new riscv_tlm::CPURV32P2_Cycle("cpu", start_PC, m_debug);
+        std::cout << "CPU: RV32 Cycle-Accurate 2-Stage Pipeline" << std::endl;
+  #elif defined(ENABLE_AT_MODEL)
+        cpu = new riscv_tlm::CPURV32P2_AT("cpu", start_PC, m_debug);
+        std::cout << "CPU: RV32 AT (Approximately-Timed) 2-Stage Pipeline" << std::endl;
+  #else
         cpu = new riscv_tlm::CPURV32P2("cpu", start_PC, m_debug);
-    #else
-        std::cerr << "Error: Pipelined ISS not enabled at compile time." << std::endl;
+        std::cout << "CPU: RV32 LT (Loosely-Timed) 2-Stage Pipeline" << std::endl;
+  #endif
+#else
+        std::cerr << "Error: Pipelined ISS not enabled." << std::endl;
         std::exit(1);
-    #endif
+#endif
     } else {
-    #if defined(ENABLE_PIPELINED_ISS)
+#if defined(ENABLE_PIPELINED_ISS)
+  #if defined(ENABLE_CYCLE_MODEL)
+        cpu = new riscv_tlm::CPURV64P2_Cycle("cpu", start_PC, m_debug);
+        std::cout << "CPU: RV64 Cycle-Accurate 2-Stage Pipeline" << std::endl;
+  #elif defined(ENABLE_AT_MODEL)
+        cpu = new riscv_tlm::CPURV64P2_AT("cpu", start_PC, m_debug);
+        std::cout << "CPU: RV64 AT (Approximately-Timed) 2-Stage Pipeline" << std::endl;
+  #else
         cpu = new riscv_tlm::CPURV64P2("cpu", start_PC, m_debug);
-    #else
-        std::cerr << "Error: Pipelined ISS not enabled at compile time." << std::endl;
+        std::cout << "CPU: RV64 LT (Loosely-Timed) 2-Stage Pipeline" << std::endl;
+  #endif
+#else
+        std::cerr << "Error: Pipelined ISS not enabled." << std::endl;
         std::exit(1);
-    #endif
+#endif
     }
 
     cpu->set_clock(&clk);
 
-    Bus   = new riscv_tlm::BusCtrl("BusCtrl");
+    // =========================================================================
+    // Create Bus and Peripherals
+    // =========================================================================
+    Bus = new riscv_tlm::BusCtrl("BusCtrl");
+    std::cout << "Bus: LT (Loosely-Timed)" << std::endl;
+
     trace = new riscv_tlm::peripherals::Trace("Trace");
     timer = new riscv_tlm::peripherals::Timer("Timer");
     uart  = new riscv_tlm::peripherals::UART("UART0");
@@ -85,9 +130,11 @@ VPTop::VPTop(sc_core::sc_module_name const &name,
     dma->mem_master.bind(Bus->dma_master_socket);
     timer->irq_line.bind(cpu->irq_line_socket);
 
+    std::cout << "========================================" << std::endl;
+
 #ifndef _WIN32
     if (m_debug) {
-        std::cerr << "Warning: Debug is not supported for pipelined CPUs. Disabling debug." << std::endl;
+        std::cerr << "Warning: Debug not supported for pipelined CPUs." << std::endl;
     }
 #endif
 }

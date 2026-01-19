@@ -6,13 +6,9 @@
 ## make
 
 cmake_minimum_required(VERSION 3.10)
-project(RISCV_TLM)
+project(RISCV_VP)
 
 # Prefer Ninja generator if available
-if(NOT CMAKE_GENERATOR)
-  find_program(NINJA_EXECUTABLE ninja)
-  if(NINJA_EXECUTABLE)
-    set(CMAKE_GENERATOR "Ninja" CACHE STRING "Build system generator" FORCE)
     message(STATUS "Using Ninja generator")
   endif()
 endif()
@@ -31,12 +27,28 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# =============================================================================
+# Build Options
+# =============================================================================
 option(ENABLE_STRICT "Treat warnings as errors" OFF)
 option(BUILD_DOC "Build documentation" ON)
 option(BUILD_TESTING "Build tests" OFF)
 option(ENABLE_PIPELINED_ISS "Enable pipelined ISS" ON)
 option(USE_LOCAL_SYSTEMC "Use vendored SystemC located in systemc/ subdir" ON)
 option(BUILD_ROBUST_HEX "Build robust_system_test hex images" ON)
+
+# Timing Model Selection (mutually exclusive)
+set(TIMING_MODEL "LT" CACHE STRING "CPU Timing Model: LT, AT, or CYCLE")
+set_property(CACHE TIMING_MODEL PROPERTY STRINGS "LT" "AT" "CYCLE")
+
+# Validate timing model
+if(NOT TIMING_MODEL MATCHES "^(LT|AT|CYCLE)$")
+  message(FATAL_ERROR "Invalid TIMING_MODEL: ${TIMING_MODEL}. Must be LT, AT, or CYCLE.")
+endif()
+
+message(STATUS "========================================")
+message(STATUS "Timing Model: ${TIMING_MODEL}")
+message(STATUS "========================================")
 
 include_directories(./inc/)
 
@@ -72,82 +84,127 @@ if(NOT spdlog_FOUND)
   add_subdirectory(spdlog)
 endif()
 
-# Gather all sources
+# =============================================================================
+# Source File Collection
+# =============================================================================
 file(GLOB SRC_ALL "src/*.cpp")
 
-# Define files that contain sc_main
 set(SRC_SIMULATOR "src/Simulator.cpp")
 set(SRC_VP_MAIN  "src/VPMain.cpp")
 
-# Core sources = all minus the two mains (robust filtering by filename)
+# Core sources - exclude mains and timing-model-specific files
 set(SRC_CORE ${SRC_ALL})
 list(FILTER SRC_CORE EXCLUDE REGEX ".*/(Simulator|VPMain)\\.cpp$")
-# Also exclude M_extension.cpp explicit specializations to avoid ODR with header implementations
 list(FILTER SRC_CORE EXCLUDE REGEX ".*/M_extension\\.cpp$")
-# Exclude 7-stage pipeline files (only use 2-stage)
+# Exclude all 7-stage pipeline files
 list(FILTER SRC_CORE EXCLUDE REGEX ".*/CPU_P32\\.cpp$")
 list(FILTER SRC_CORE EXCLUDE REGEX ".*/CPU_P64\\.cpp$")
+# Exclude all 2-stage timing variants (will add selected ones below)
+list(FILTER SRC_CORE EXCLUDE REGEX ".*/CPU_P32_2.*\\.cpp$")
+list(FILTER SRC_CORE EXCLUDE REGEX ".*/CPU_P64_2.*\\.cpp$")
 
+
+# =============================================================================
+# Core Library
+# =============================================================================
 # Core library with all SystemC/TLM modules
-add_library(riscv_tlm_core ${SRC_CORE})
-set_property(TARGET riscv_tlm_core PROPERTY POSITION_INDEPENDENT_CODE ON)
+add_library(riscv_vp_core ${SRC_CORE})
+set_property(TARGET riscv_vp_core PROPERTY POSITION_INDEPENDENT_CODE ON)
 if(TARGET spdlog::spdlog)
-  target_link_libraries(riscv_tlm_core PUBLIC SystemC::systemc spdlog::spdlog)
+  target_link_libraries(riscv_vp_core PUBLIC SystemC::systemc spdlog::spdlog)
 else()
-  target_link_libraries(riscv_tlm_core PUBLIC SystemC::systemc spdlog::spdlog_header_only)
+  target_link_libraries(riscv_vp_core PUBLIC SystemC::systemc spdlog::spdlog_header_only)
 endif()
 
 # Target-specific warnings and optimizations
 if(MSVC)
-  target_compile_options(riscv_tlm_core PRIVATE /W3 /EHsc /permissive-)
+  target_compile_options(riscv_vp_core PRIVATE /W3 /EHsc /permissive-)
   if(ENABLE_STRICT)
-    target_compile_options(riscv_tlm_core PRIVATE /WX)
+    target_compile_options(riscv_vp_core PRIVATE /WX)
   endif()
   # Do not force /O2 here to avoid conflict with Debug runtime flags (/RTC1). Use generator-set configs.
 else()
-  target_compile_options(riscv_tlm_core PRIVATE -O3 -g -Wall -Wextra -Wunused-function -Wpedantic)
+  target_compile_options(riscv_vp_core PRIVATE -O3 -g -Wall -Wextra -Wunused-function -Wpedantic)
   if(ENABLE_STRICT)
-    target_compile_options(riscv_tlm_core PRIVATE -Werror)
+    target_compile_options(riscv_vp_core PRIVATE -Werror)
   endif()
 endif()
 
 # Allow deprecated IEEE API usages (SC_HAS_PROCESS etc.)
-target_compile_definitions(riscv_tlm_core PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)
+target_compile_definitions(riscv_vp_core PRIVATE SC_ALLOW_DEPRECATED_IEEE_API)
 
 # Ensure public headers are visible to dependents
-target_include_directories(riscv_tlm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc ${SystemC_INCLUDE_DIRS})
+target_include_directories(riscv_vp_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc ${SystemC_INCLUDE_DIRS})
 
 # If pipelined ISS is enabled, add 2-stage pipeline sources (for VP only)
+# If pipelined ISS is enabled, select the appropriate CPU model implementation
 if(ENABLE_PIPELINED_ISS)
-  target_sources(riscv_tlm_core PRIVATE 
-    src/CPU_P32_2.cpp 
-    src/CPU_P64_2.cpp
-  )
-  target_compile_definitions(riscv_tlm_core PUBLIC ENABLE_PIPELINED_ISS=1)
-  target_include_directories(riscv_tlm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
+  if(TIMING_MODEL STREQUAL "CYCLE")
+    # CYCLE (Cycle-Accurate) model - uses blocking transport with cycle-accurate logic
+    target_sources(riscv_vp_core PRIVATE 
+      src/CPU_P32_2_Cycle.cpp 
+      src/CPU_P64_2_Cycle.cpp
+    )
+    target_compile_definitions(riscv_vp_core PUBLIC ENABLE_PIPELINED_ISS=1 ENABLE_CYCLE_MODEL=1)
+    message(STATUS "Pipelined ISS enabled with CYCLE (Cycle-Accurate) model")
+  elseif(TIMING_MODEL STREQUAL "AT")
+    # AT (Approximately-Timed) model - uses non-blocking transport
+    # Note: Using standard Bus/Memory (LT) as per user request
+    target_sources(riscv_vp_core PRIVATE 
+      src/CPU_P32_2_AT.cpp 
+      src/CPU_P64_2_AT.cpp
+    )
+    target_compile_definitions(riscv_vp_core PUBLIC ENABLE_PIPELINED_ISS=1 ENABLE_AT_MODEL=1)
+    message(STATUS "Pipelined ISS enabled with AT (Approximately-Timed) model")
+  else()
+    # LT (Loosely-Timed) model - uses blocking transport (default)
+    # Uses explicit wait() calls for simple simulation pacing
+    target_sources(riscv_vp_core PRIVATE 
+      src/CPU_P32_2.cpp 
+      src/CPU_P64_2.cpp
+    )
+    target_compile_definitions(riscv_vp_core PUBLIC ENABLE_PIPELINED_ISS=1)
+    message(STATUS "Pipelined ISS enabled with LT (Loosely-Timed) model")
+  endif()
+  target_include_directories(riscv_vp_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
 endif()
 
 # Always add simple non-pipelined CPU (for TLM simulator)
-target_sources(riscv_tlm_core PRIVATE 
+target_sources(riscv_vp_core PRIVATE 
   src/CPU_Simple.cpp
 )
 
-# Legacy simulator executable (uses non-pipelined LT CPU)
+# =============================================================================
+# Executables
+# =============================================================================
+
+# Legacy simulator (uses non-pipelined LT CPU)
 add_executable(RISCV_TLM ${SRC_SIMULATOR})
-target_link_libraries(RISCV_TLM PRIVATE riscv_tlm_core)
-# No extra /O2 on MSVC to avoid conflicting with build type
+target_link_libraries(RISCV_TLM PRIVATE riscv_vp_core)
 if(NOT MSVC)
   target_compile_options(RISCV_TLM PRIVATE -O3)
 endif()
 
 # Virtual Prototype executable
 add_executable(RISCV_VP ${SRC_VP_MAIN} src/VPTop.cpp)
-target_link_libraries(RISCV_VP PRIVATE riscv_tlm_core)
+target_link_libraries(RISCV_VP PRIVATE riscv_vp_core)
 if(NOT MSVC)
   target_compile_options(RISCV_VP PRIVATE -O3)
 endif()
 
-# Robust test hex targets (RV32/RV64) using external toolchains if available
+# =============================================================================
+# Print Configuration Summary
+# =============================================================================
+message(STATUS "")
+message(STATUS "Build Configuration:")
+message(STATUS "  Timing Model:     ${TIMING_MODEL}")
+message(STATUS "  Pipelined ISS:    ${ENABLE_PIPELINED_ISS}")
+message(STATUS "  C++ Standard:     ${CMAKE_CXX_STANDARD}")
+message(STATUS "")
+
+# =============================================================================
+# Robust test hex targets
+# =============================================================================
 if(BUILD_ROBUST_HEX)
   find_program(RISCV32_GCC riscv32-unknown-elf-gcc)
   find_program(RISCV32_OBJCOPY riscv32-unknown-elf-objcopy)
@@ -178,6 +235,64 @@ if(BUILD_ROBUST_HEX)
       VERBATIM)
     add_custom_target(robust_rv32_hex DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/robust_system_test.hex)
   endif()
+endif()
+
+# =============================================================================
+# Dhrystone Benchmark Build Targets
+# =============================================================================
+if(BUILD_ROBUST_HEX)
+  # Dhrystone for RV32
+  if(RISCV32_GCC AND RISCV32_OBJCOPY)
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/dhrystone32.hex
+      COMMAND ${RISCV32_GCC} -march=rv32imac -mabi=ilp32 -O2 -nostdlib 
+              -Wl,--entry=main -Wl,--gc-sections
+              -I${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone/dhrystone.c
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone/helper_functions.c
+              -o dhrystone_rv32.elf
+      COMMAND ${RISCV32_OBJCOPY} -O ihex dhrystone_rv32.elf 
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/dhrystone32.hex
+      BYPRODUCTS dhrystone_rv32.elf
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      COMMENT "Building RV32 Dhrystone benchmark hex"
+      VERBATIM)
+    add_custom_target(dhrystone_rv32_hex DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/dhrystone32.hex)
+    message(STATUS "Dhrystone RV32 benchmark target enabled")
+  endif()
+
+  # Dhrystone for RV64
+  if(RISCV64_GCC AND RISCV64_OBJCOPY)
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/dhrystone64.hex
+      COMMAND ${RISCV64_GCC} -march=rv64imac -mabi=lp64 -O2 -nostdlib 
+              -Wl,--entry=main -Wl,--gc-sections
+              -I${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone/dhrystone.c
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone/helper_functions.c
+              -o dhrystone_rv64.elf
+      COMMAND ${RISCV64_OBJCOPY} -O ihex dhrystone_rv64.elf 
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/dhrystone64.hex
+      BYPRODUCTS dhrystone_rv64.elf
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      COMMENT "Building RV64 Dhrystone benchmark hex"
+      VERBATIM)
+    add_custom_target(dhrystone_rv64_hex DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/dhrystone64.hex)
+    message(STATUS "Dhrystone RV64 benchmark target enabled")
+  endif()
+endif()
+
+# Combined benchmark target
+add_custom_target(benchmarks)
+if(TARGET dhrystone_rv32_hex)
+  add_dependencies(benchmarks dhrystone_rv32_hex)
+endif()
+if(TARGET dhrystone_rv64_hex)
+  add_dependencies(benchmarks dhrystone_rv64_hex)
+endif()
+if(TARGET robust_rv32_hex)
+  add_dependencies(benchmarks robust_rv32_hex)
+endif()
+if(TARGET robust_rv64_hex)
+  add_dependencies(benchmarks robust_rv64_hex)
 endif()
 
 find_package(Doxygen)

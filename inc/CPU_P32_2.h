@@ -21,18 +21,17 @@
 namespace riscv_tlm {
 
 /**
- * @brief 2-Stage Pipelined RISC-V 32-bit CPU with AT timing (for VP)
+ * @brief 2-Stage Pipelined RISC-V 32-bit CPU (for VP)
  * 
  * Pipeline stages:
- *   IF  -> EX
- *   Fetch  Decode+Execute+Memory+Writeback
+ *   IF  -> [LATCH] -> EX
+ *   Fetch            Decode+Execute+Memory+Writeback
  * 
- * This is an Approximately-Timed (AT) model that:
- * - Waits for actual clock cycles
- * - Models branch flush penalties
- * - Provides cycle-accurate statistics
- * 
- * For fast functional simulation, use CPURV32Simple instead.
+ * Features:
+ * - IF/EX pipeline latch holds instruction between stages
+ * - Branch taken causes 1-cycle flush (bubble)
+ * - Stages execute conceptually in parallel each cycle
+ * - Uses LT (b_transport) for memory access
  */
 class CPURV32P2 : public CPU {
 public:
@@ -73,9 +72,6 @@ private:
     M_extension<BaseType>*   m_inst{nullptr};
     A_extension<BaseType>*   a_inst{nullptr};
 
-    // Instruction fetch
-    std::uint32_t INSTR{0};
-
     // IRQ bookkeeping
     BaseType int_cause{0};
 
@@ -84,8 +80,41 @@ private:
     // Statistics
     PipelineStats stats{};
 
-    // Clock period for AT timing
-    sc_core::sc_time clock_period{10, sc_core::SC_NS};
+    // =========================================================================
+    // Pipeline Latch: IF -> EX
+    // =========================================================================
+    struct IF_EX_Latch {
+        std::uint32_t instruction{0};   // Fetched instruction
+        std::uint32_t pc{0};            // PC of fetched instruction
+        bool valid{false};              // Is latch data valid? (false = bubble)
+    } if_ex_latch;
+
+    // =========================================================================
+    // Pipeline Control
+    // =========================================================================
+    bool pipeline_flush{false};         // Flush IF stage (branch taken)
+
+    // =========================================================================
+    // Pipeline Stage Methods
+    // =========================================================================
+    
+    /**
+     * @brief IF Stage: Fetch instruction from memory
+     * 
+     * Fetches instruction at current PC and loads it into IF/EX latch.
+     * Speculatively increments PC (assumes no branch taken).
+     */
+    void IF_stage();
+
+    /**
+     * @brief EX Stage: Decode and execute instruction
+     * 
+     * Takes instruction from IF/EX latch, decodes and executes it.
+     * Sets pipeline_flush if branch is taken.
+     * 
+     * @return true if breakpoint hit, false otherwise
+     */
+    bool EX_stage();
 
     void invalidate_direct_mem_ptr(sc_dt::uint64, sc_dt::uint64) { dmi_ptr_valid = false; }
 };
