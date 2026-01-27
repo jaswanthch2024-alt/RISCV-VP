@@ -21,8 +21,19 @@
 #include "VPTop.h"
 #include "Performance.h"
 #if defined(ENABLE_PIPELINED_ISS)
-#include "CPU_P32_2.h"
-#include "CPU_P64_2.h"
+  #if defined(ENABLE_CYCLE6_MODEL)
+    #include "CPU_P32_6_Cycle.h"
+    #include "CPU_P64_6_Cycle.h"
+  #elif defined(ENABLE_CYCLE_MODEL)
+    #include "CPU_P32_2_Cycle.h"
+    #include "CPU_P64_2_Cycle.h"
+  #elif defined(ENABLE_AT_MODEL)
+    #include "CPU_P32_2_AT.h"
+    #include "CPU_P64_2_AT.h"
+  #else
+    #include "CPU_P32_2.h"
+    #include "CPU_P64_2.h"
+  #endif
 #endif
 
 #include "spdlog/spdlog.h"
@@ -53,7 +64,19 @@ struct Options {
 
 static void usage(const char* exe) {
     std::cout << "Usage: " << exe << " -f <file.hex> [-R 32|64] [-D] [-t <seconds>] [--max-instr <N>]\n";
-    std::cout << "\nRISC-V Virtual Prototype with LT 2-stage pipelined CPU\n";
+#if defined(ENABLE_PIPELINED_ISS)
+  #if defined(ENABLE_CYCLE6_MODEL)
+    std::cout << "\nRISC-V Virtual Prototype with Cycle-Accurate 6-Stage Pipelined CPU\n";
+  #elif defined(ENABLE_CYCLE_MODEL)
+    std::cout << "\nRISC-V Virtual Prototype with Cycle-Accurate 2-Stage Pipelined CPU\n";
+  #elif defined(ENABLE_AT_MODEL)
+    std::cout << "\nRISC-V Virtual Prototype with AT 2-Stage Pipelined CPU\n";
+  #else
+    std::cout << "\nRISC-V Virtual Prototype with LT 2-Stage Pipelined CPU\n";
+  #endif
+#else
+    std::cout << "\nRISC-V Virtual Prototype (Single-Cycle LT)\n";
+#endif
     std::cout << "\nOptions:\n";
     std::cout << "  -f, --file <file.hex>   Input hex file (required)\n";
     std::cout << "  -R, --arch 32|64        Architecture: RV32 or RV64 (default: 32)\n";
@@ -130,7 +153,19 @@ int sc_main(int argc, char* argv[]) {
     std::cout << "  file: " << opts.hex_file << "\n";
     std::cout << "  arch: " << (opts.cpu_type == riscv_tlm::RV32 ? "RV32" : "RV64") << "\n";
     std::cout << "  mode: LT (behavioral cycle counting)\n";
-    std::cout << "  pipe: 2-stage (IF -> EX)\n";
+#if defined(ENABLE_PIPELINED_ISS)
+    #if defined(ENABLE_CYCLE6_MODEL)
+        std::cout << "  pipe: 6-stage (IF -> ID -> IS -> EX -> MEM -> WB)\n";
+    #elif defined(ENABLE_CYCLE_MODEL)
+        std::cout << "  pipe: 2-stage (IF -> EX)\n";
+    #elif defined(ENABLE_AT_MODEL)
+        std::cout << "  pipe: 2-stage (IF -> EX) (AT)\n";
+    #else
+        std::cout << "  pipe: 2-stage (IF -> EX) (LT)\n";
+    #endif
+#else
+    std::cout << "  pipe: single-cycle (LT)\n";
+#endif
     std::cout << "  dbg : " << (opts.debug ? "on" : "off") << "\n";
     if (opts.timeout_sec > 0) {
         std::cout << "  tmo : " << opts.timeout_sec << " s\n";
@@ -187,42 +222,66 @@ int sc_main(int argc, char* argv[]) {
     std::cout << "Sim time:     " << sc_core::sc_time_stamp() << "\n";
     std::cout << "Instructions: " << perf->getInstructions() << "\n";
 
-    // Print 2-stage pipeline statistics
+    // Print pipeline statistics
 #if defined(ENABLE_PIPELINED_ISS)
     if (g_top && g_top->cpu && g_top->cpu->isPipelined()) {
-        std::cout << "\n=== Pipeline Statistics (2-stage LT with cycle counting) ===\n";
         
-        // Try 2-stage RV64
-        auto* cpu64p2 = dynamic_cast<riscv_tlm::CPURV64P2*>(g_top->cpu);
-        if (cpu64p2) {
-            auto stats = cpu64p2->getStats();
+#if defined(ENABLE_CYCLE6_MODEL)
+        std::cout << "\n=== Pipeline Statistics (6-stage cycle-accurate) ===\n";
+        // Cycle Accurate 6-Stage Models
+        auto* cpu64 = dynamic_cast<riscv_tlm::CPURV64P6_Cycle*>(g_top->cpu);
+        if (cpu64) {
+            cpu64->printStats();
+        }
+        auto* cpu32 = dynamic_cast<riscv_tlm::CPURV32P6_Cycle*>(g_top->cpu);
+        if (cpu32) {
+            cpu32->printStats();
+        }
+#elif defined(ENABLE_CYCLE_MODEL)
+        // Cycle Accurate Models
+        auto* cpu64 = dynamic_cast<riscv_tlm::CPURV64P2_Cycle*>(g_top->cpu);
+        if (cpu64) {
+            auto stats = cpu64->getStats();
+            std::cout << "  Pipeline cycles:    " << stats.total_cycles << "\n";
+            std::cout << "  Instructions:       " << stats.instructions_retired << "\n";
+            if (stats.total_cycles > 0)
+                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << stats.get_ipc() << "\n";
+        }
+        auto* cpu32 = dynamic_cast<riscv_tlm::CPURV32P2_Cycle*>(g_top->cpu);
+        if (cpu32) {
+            auto stats = cpu32->getStats();
+            std::cout << "  Pipeline cycles:    " << stats.total_cycles << "\n";
+            std::cout << "  Instructions:       " << stats.instructions_retired << "\n";
+            if (stats.total_cycles > 0)
+                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << stats.get_ipc() << "\n";
+        }
+#elif defined(ENABLE_AT_MODEL)
+        // AT Models
+        auto* cpu64 = dynamic_cast<riscv_tlm::CPURV64P2_AT*>(g_top->cpu);
+        if (cpu64) {
+           // AT model stats if any
+        }
+        auto* cpu32 = dynamic_cast<riscv_tlm::CPURV32P2_AT*>(g_top->cpu);
+        if (cpu32) {
+           // AT model stats if any
+        }
+#else
+        // LT Models (Default)
+        auto* cpu64 = dynamic_cast<riscv_tlm::CPURV64P2*>(g_top->cpu);
+        if (cpu64) {
+            auto stats = cpu64->getStats();
             std::cout << "  Pipeline cycles:    " << stats.cycles << "\n";
             std::cout << "  Pipeline stalls:    " << stats.stalls << "\n";
-            std::cout << "  Pipeline flushes:   " << stats.flushes << "\n";
             std::cout << "  Control hazards:    " << stats.control_hazards << "\n";
-            if (stats.cycles > 0) {
-                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
-                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << "\n";
-                double cpi = static_cast<double>(stats.cycles) / perf->getInstructions();
-                std::cout << "  CPI:                " << std::fixed << std::setprecision(3) << cpi << "\n";
-            }
         }
-        
-        // Try 2-stage RV32
-        auto* cpu32p2 = dynamic_cast<riscv_tlm::CPURV32P2*>(g_top->cpu);
-        if (cpu32p2) {
-            auto stats = cpu32p2->getStats();
+        auto* cpu32 = dynamic_cast<riscv_tlm::CPURV32P2*>(g_top->cpu);
+        if (cpu32) {
+            auto stats = cpu32->getStats();
             std::cout << "  Pipeline cycles:    " << stats.cycles << "\n";
             std::cout << "  Pipeline stalls:    " << stats.stalls << "\n";
-            std::cout << "  Pipeline flushes:   " << stats.flushes << "\n";
             std::cout << "  Control hazards:    " << stats.control_hazards << "\n";
-            if (stats.cycles > 0) {
-                double ipc = static_cast<double>(perf->getInstructions()) / stats.cycles;
-                std::cout << "  IPC:                " << std::fixed << std::setprecision(3) << ipc << "\n";
-                double cpi = static_cast<double>(stats.cycles) / perf->getInstructions();
-                std::cout << "  CPI:                " << std::fixed << std::setprecision(3) << cpi << "\n";
-            }
         }
+#endif
     }
 #endif
 

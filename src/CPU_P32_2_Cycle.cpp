@@ -169,6 +169,12 @@ void CPURV32P2_Cycle::on_posedge() {
 // =============================================================================
 
 void CPURV32P2_Cycle::on_negedge() {
+    // If we are waiting for memory latency, we must execute IF_stage to decrement the counter
+    if (mem_state == MemState::FETCH_PENDING) {
+        IF_stage();
+        return;
+    }
+
     // Don't fetch if stalled or flushing
     if (if_stall || pipeline_flush) {
         if (if_stall) {

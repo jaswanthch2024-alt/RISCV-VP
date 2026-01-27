@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <iostream>
 #include <vector>
+#include <atomic>
 #include <cstring>
 
 namespace riscv_tlm { namespace peripherals {
@@ -15,16 +16,26 @@ class DMA : public sc_core::sc_module {
 public:
     tlm_utils::simple_target_socket<DMA> socket;        // register interface
     tlm_utils::simple_initiator_socket<DMA> mem_master; // to access system memory via Bus (user must bind)
+    bool debug_ = false;
+    static std::atomic<bool> in_flight_;
+    void set_debug(bool d) { debug_ = d; }
+    static bool is_in_flight() { return in_flight_.load(); }
 
     SC_HAS_PROCESS(DMA);
     explicit DMA(sc_core::sc_module_name const &name) : sc_module(name), socket("socket"), mem_master("mem_master"),
-        src(0), dst(0), len(0), control(0) {
+        debug_(false), src(0), dst(0), len(0), control(0) {
         socket.register_b_transport(this, &DMA::b_transport);
     }
 
 private:
     void start_transfer() {
         if (len == 0) return;
+        if (mem_master.size() == 0) {
+            SC_REPORT_ERROR("DMA", "mem_master socket not bound");
+            return;
+        }
+        if (debug_) std::cout << "[DMA] Starting transfer src=" << src << " dst=" << dst << " len=" << len << std::endl;
+        in_flight_.store(true);
         tlm::tlm_generic_payload trans;
         sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
         std::vector<unsigned char> buffer(len);
@@ -38,13 +49,19 @@ private:
         trans.set_dmi_allowed(false);
         trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
         mem_master->b_transport(trans, delay);
-        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) return;
+        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
+            if (debug_) std::cout << "[DMA] Read error" << std::endl;
+            in_flight_.store(false);
+            return;
+        }
         // WRITE
         trans.set_address(dst);
         trans.set_command(tlm::TLM_WRITE_COMMAND);
         trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
         mem_master->b_transport(trans, delay);
+        if (debug_) std::cout << "[DMA] Transfer complete" << std::endl;
         control &= ~1u; // clear start bit
+        in_flight_.store(false);
     }
 
     void b_transport(tlm::tlm_generic_payload &trans, sc_core::sc_time &delay) {
@@ -74,4 +91,7 @@ private:
 
     uint32_t src, dst, len, control;
 };
+
+// Definition of static in_flight_ flag
+inline std::atomic<bool> riscv_tlm::peripherals::DMA::in_flight_{false};
 }} // namespace

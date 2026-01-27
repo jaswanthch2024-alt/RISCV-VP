@@ -22,7 +22,8 @@ namespace riscv_tlm {
 enum class TimingModelType {
     LT,     ///< Loosely-Timed: b_transport, fast simulation
     AT,     ///< Approximately-Timed: nb_transport, phase-accurate
-    CYCLE   ///< Cycle-Accurate: clock-driven, RTL-correlatable
+    CYCLE,   ///< Cycle-Accurate: clock-driven, RTL-correlatable
+    CYCLE6  ///< Cycle-Accurate 6-Stage Pipeline
 };
 
 /**
@@ -33,6 +34,7 @@ inline const char* timing_model_name(TimingModelType model) {
         case TimingModelType::LT:    return "LT (Loosely-Timed)";
         case TimingModelType::AT:    return "AT (Approximately-Timed)";
         case TimingModelType::CYCLE: return "CYCLE (Cycle-Accurate)";
+        case TimingModelType::CYCLE6: return "CYCLE6 (6-Stage Cycle-Accurate)";
         default: return "Unknown";
     }
 }

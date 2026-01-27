@@ -11,7 +11,10 @@
 
 // CPU includes based on timing model
 #if defined(ENABLE_PIPELINED_ISS)
-  #if defined(ENABLE_CYCLE_MODEL)
+  #if defined(ENABLE_CYCLE6_MODEL)
+    #include "CPU_P32_6_Cycle.h"
+    #include "CPU_P64_6_Cycle.h"
+  #elif defined(ENABLE_CYCLE_MODEL)
     #include "CPU_P32_2_Cycle.h"
     #include "CPU_P64_2_Cycle.h"
   #elif defined(ENABLE_AT_MODEL)
@@ -67,7 +70,10 @@ VPTop::VPTop(sc_core::sc_module_name const &name,
     // =========================================================================
     if (m_cpu_type == riscv_tlm::RV32) {
 #if defined(ENABLE_PIPELINED_ISS)
-  #if defined(ENABLE_CYCLE_MODEL)
+  #if defined(ENABLE_CYCLE6_MODEL)
+        cpu = new riscv_tlm::CPURV32P6_Cycle("cpu", start_PC, m_debug);
+        std::cout << "CPU: RV32 Cycle-Accurate 6-Stage Pipeline" << std::endl;
+  #elif defined(ENABLE_CYCLE_MODEL)
         cpu = new riscv_tlm::CPURV32P2_Cycle("cpu", start_PC, m_debug);
         std::cout << "CPU: RV32 Cycle-Accurate 2-Stage Pipeline" << std::endl;
   #elif defined(ENABLE_AT_MODEL)
@@ -83,7 +89,10 @@ VPTop::VPTop(sc_core::sc_module_name const &name,
 #endif
     } else {
 #if defined(ENABLE_PIPELINED_ISS)
-  #if defined(ENABLE_CYCLE_MODEL)
+  #if defined(ENABLE_CYCLE6_MODEL)
+        cpu = new riscv_tlm::CPURV64P6_Cycle("cpu", start_PC, m_debug);
+        std::cout << "CPU: RV64 Cycle-Accurate 6-Stage Pipeline" << std::endl;
+  #elif defined(ENABLE_CYCLE_MODEL)
         cpu = new riscv_tlm::CPURV64P2_Cycle("cpu", start_PC, m_debug);
         std::cout << "CPU: RV64 Cycle-Accurate 2-Stage Pipeline" << std::endl;
   #elif defined(ENABLE_AT_MODEL)
@@ -113,6 +122,7 @@ VPTop::VPTop(sc_core::sc_module_name const &name,
     clint = new riscv_tlm::peripherals::CLINT("CLINT");
     plic  = new riscv_tlm::peripherals::PLIC("PLIC");
     dma   = new riscv_tlm::peripherals::DMA("DMA");
+    dma->set_debug(m_debug);
     sysif = new riscv_tlm::peripherals::SyscallIf("SysIf");
 
     cpu->instr_bus.bind(Bus->cpu_instr_socket);

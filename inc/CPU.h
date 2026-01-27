@@ -33,7 +33,7 @@ namespace riscv_tlm {
      * 
      * All CPU implementations (pipelined or otherwise) derive from this class.
      */
-    class CPU : sc_core::sc_module  {
+    class CPU : public sc_core::sc_module  {
     public:
         virtual void set_clock(sc_core::sc_clock* c) { (void)c; }
         

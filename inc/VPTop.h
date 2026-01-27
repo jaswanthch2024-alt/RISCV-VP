@@ -31,7 +31,10 @@
 
 // CPU models based on timing selection
 #if defined(ENABLE_PIPELINED_ISS)
-  #if defined(ENABLE_CYCLE_MODEL)
+  #if defined(ENABLE_CYCLE6_MODEL)
+    #include "CPU_P32_6_Cycle.h"
+    #include "CPU_P64_6_Cycle.h"
+  #elif defined(ENABLE_CYCLE_MODEL)
     #include "CPU_P32_2_Cycle.h"
     #include "CPU_P64_2_Cycle.h"
   #elif defined(ENABLE_AT_MODEL)
@@ -60,6 +63,7 @@ namespace vp {
 class VPTop : public sc_core::sc_module {
 public:
     // CPU (common base pointer)
+    riscv_tlm::CPU *cpu;
     // Memory (Always LT implementation as per simplified model)
     riscv_tlm::Memory *MainMemory;
     riscv_tlm::BusCtrl *Bus;
@@ -93,7 +97,9 @@ public:
      * @brief Get current timing model
      */
     static riscv_tlm::TimingModelType getTimingModel() {
-#if defined(ENABLE_CYCLE_MODEL)
+#if defined(ENABLE_CYCLE6_MODEL)
+        return riscv_tlm::TimingModelType::CYCLE6;
+#elif defined(ENABLE_CYCLE_MODEL)
         return riscv_tlm::TimingModelType::CYCLE;
 #elif defined(ENABLE_AT_MODEL)
         return riscv_tlm::TimingModelType::AT;

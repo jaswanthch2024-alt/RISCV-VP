@@ -9,10 +9,8 @@ cmake_minimum_required(VERSION 3.10)
 project(RISCV_VP)
 
 # Prefer Ninja generator if available
-    message(STATUS "Using Ninja generator")
-  endif()
-endif()
-
+message(STATUS "Using Ninja generator")
+ 
 # Use C++20 on MSVC to support [[likely]] attribute; otherwise default to 17
 if(MSVC)
   set(CMAKE_CXX_STANDARD 20)
@@ -38,12 +36,12 @@ option(USE_LOCAL_SYSTEMC "Use vendored SystemC located in systemc/ subdir" ON)
 option(BUILD_ROBUST_HEX "Build robust_system_test hex images" ON)
 
 # Timing Model Selection (mutually exclusive)
-set(TIMING_MODEL "LT" CACHE STRING "CPU Timing Model: LT, AT, or CYCLE")
-set_property(CACHE TIMING_MODEL PROPERTY STRINGS "LT" "AT" "CYCLE")
+set(TIMING_MODEL "LT" CACHE STRING "CPU Timing Model: LT, AT, CYCLE, or CYCLE6")
+set_property(CACHE TIMING_MODEL PROPERTY STRINGS "LT" "AT" "CYCLE" "CYCLE6")
 
 # Validate timing model
-if(NOT TIMING_MODEL MATCHES "^(LT|AT|CYCLE)$")
-  message(FATAL_ERROR "Invalid TIMING_MODEL: ${TIMING_MODEL}. Must be LT, AT, or CYCLE.")
+if(NOT TIMING_MODEL MATCHES "^(LT|AT|CYCLE|CYCLE6)$")
+  message(FATAL_ERROR "Invalid TIMING_MODEL: ${TIMING_MODEL}. Must be LT, AT, CYCLE, or CYCLE6.")
 endif()
 
 message(STATUS "========================================")
@@ -139,7 +137,15 @@ target_include_directories(riscv_vp_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc 
 # If pipelined ISS is enabled, add 2-stage pipeline sources (for VP only)
 # If pipelined ISS is enabled, select the appropriate CPU model implementation
 if(ENABLE_PIPELINED_ISS)
-  if(TIMING_MODEL STREQUAL "CYCLE")
+  if(TIMING_MODEL STREQUAL "CYCLE6")
+    # CYCLE6 (6-Stage Cycle-Accurate) model
+    target_sources(riscv_vp_core PRIVATE 
+      src/CPU_P32_6_Cycle.cpp 
+      src/CPU_P64_6_Cycle.cpp
+    )
+    target_compile_definitions(riscv_vp_core PUBLIC ENABLE_PIPELINED_ISS=1 ENABLE_CYCLE6_MODEL=1)
+    message(STATUS "Pipelined ISS enabled with CYCLE6 (6-Stage Cycle-Accurate) model")
+  elseif(TIMING_MODEL STREQUAL "CYCLE")
     # CYCLE (Cycle-Accurate) model - uses blocking transport with cycle-accurate logic
     target_sources(riscv_vp_core PRIVATE 
       src/CPU_P32_2_Cycle.cpp 

@@ -72,6 +72,8 @@ doc/html
 /logs/
 /Testing/
 /Testing/Temporary/
+/results/
+/build_*/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
