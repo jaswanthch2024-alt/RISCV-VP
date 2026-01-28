@@ -24,7 +24,7 @@ namespace riscv_tlm {
 #define TIMERCMP_MEMORY_ADDRESS_LO 0x40004008
 #define TIMERCMP_MEMORY_ADDRESS_HI 0x4000400C
 
-#define UART0_BASE_ADDRESS        0x10000000
+#define UART0_BASE_ADDRESS        0x50000000
 
 // New stub blocks (addresses follow common RISC-V conventions)
 #define CLINT_BASE_ADDRESS        0x02000000

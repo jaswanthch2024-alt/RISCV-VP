@@ -269,7 +269,7 @@ if(BUILD_ROBUST_HEX)
   # Dhrystone for RV64
   if(RISCV64_GCC AND RISCV64_OBJCOPY)
     add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/tests/hex/dhrystone64.hex
-      COMMAND ${RISCV64_GCC} -march=rv64imac -mabi=lp64 -O2 -nostdlib 
+      COMMAND ${RISCV64_GCC} -march=rv64im -mabi=lp64 -O2 -nostdlib -ffreestanding 
               -Wl,--entry=main -Wl,--gc-sections
               -I${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone
               ${CMAKE_CURRENT_SOURCE_DIR}/tests/C/dhrystone/dhrystone.c

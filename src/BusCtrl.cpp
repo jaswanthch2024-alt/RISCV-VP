@@ -41,10 +41,30 @@ namespace riscv_tlm {
         sc_dt::uint64 adr_bytes = trans.get_address();
         sc_dt::uint64 adr = adr_bytes / 4;
 
-        if (adr >= TO_HOST_ADDRESS / 4) {
-            std::cout << "To host\n" << std::flush;
+        // Specific check for legacy TO_HOST (0x90000000)
+        // Check EXACT match avoid trapping high memory usage (stack)
+        if (adr == TO_HOST_ADDRESS / 4) {
+            std::cout << "To host (legacy)\n" << std::flush;
+            trans.set_response_status(tlm::TLM_OK_RESPONSE);
             sc_core::sc_stop();
             return;
+        }
+        
+        // Trap standard Spike/RISC-V-Tests tohost address (0x80001000)
+        // adr is dword index (byte_addr / 4)
+        // 0x80001000 / 4 = 0x20000400
+        if (adr == 0x20000400) { 
+            if (trans.get_command() == tlm::TLM_WRITE_COMMAND) {
+                 uint32_t val = 0;
+                 if (trans.get_data_length() >= 4) {
+                     memcpy(&val, trans.get_data_ptr(), 4);
+                 }
+                 if (val != 0) { // Only stop if non-zero is written (return code)
+                     std::cout << "To host (0x80001000) detected. termination code: " << val << "\n" << std::flush;
+                     sc_core::sc_stop();
+                     return;
+                 }
+            }
         }
 
         // Decode by region (simple range checks). Optional targets are checked for binding.

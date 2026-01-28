@@ -34,7 +34,7 @@ namespace riscv_tlm {
 
         /* 16 MBytes */
         enum {
-            SIZE = 0x1000000
+            SIZE = 0x20000000
         };
         const sc_core::sc_time LATENCY; // legacy const (kept at zero)
 

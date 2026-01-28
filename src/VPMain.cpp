@@ -152,10 +152,16 @@ int sc_main(int argc, char* argv[]) {
     std::cout << "RISC-V Virtual Prototype (Loosely-Timed with cycle counting)\n";
     std::cout << "  file: " << opts.hex_file << "\n";
     std::cout << "  arch: " << (opts.cpu_type == riscv_tlm::RV32 ? "RV32" : "RV64") << "\n";
-    std::cout << "  mode: LT (behavioral cycle counting)\n";
+#if defined(ENABLE_CYCLE6_MODEL) || defined(ENABLE_CYCLE_MODEL)
+    std::cout << "  mode: Loop-based (cycle-accurate)\n";
+#elif defined(ENABLE_AT_MODEL)
+    std::cout << "  mode: AT (Approximate-Timed)\n";
+#else
+    std::cout << "  mode: LT (Loosely-Timed)\n";
+#endif
 #if defined(ENABLE_PIPELINED_ISS)
     #if defined(ENABLE_CYCLE6_MODEL)
-        std::cout << "  pipe: 6-stage (IF -> ID -> IS -> EX -> MEM -> WB)\n";
+        std::cout << "  pipe: 6-stage (PCGen -> Fetch -> ID -> Issue -> EX -> Commit)\n";
     #elif defined(ENABLE_CYCLE_MODEL)
         std::cout << "  pipe: 2-stage (IF -> EX)\n";
     #elif defined(ENABLE_AT_MODEL)

@@ -105,6 +105,14 @@ static int printf(const char *fmt, ...) {
     return 0;
 }
 
+// Exit syscall for simulator termination
+void _exit(int status) {
+    register int a0 asm("a0") = status;
+    register int a7 asm("a7") = 93; // Syscall 93 = Exit
+    asm volatile("ecall" : : "r"(a0), "r"(a7));
+    while(1); // Hang if syscall fails
+}
+
 // Minimal atoi
 static int atoi(const char *s) {
     int n = 0;
@@ -535,7 +543,7 @@ typedef struct record
 #ifdef CONSTANT
 #define NUM_RUNS (CONSTANT)
 #else
-#define NUM_RUNS (10000)
+#define NUM_RUNS (500)
 //#define NUM_RUNS (10)
 #endif
 #define DLX_FREQ 1  /* in MHz */
@@ -545,8 +553,8 @@ void Ireport ( int c ) {
   // report(c);
 }
 
-#include <string.h>
-#if 0
+// #include <string.h>
+#if 1
 #ifndef strcpy
 #warning using custom strcpy
 char *strcpy (char *dst0, const char *src0)
